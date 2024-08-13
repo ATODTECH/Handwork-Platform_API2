@@ -1,13 +1,19 @@
 from rest_framework.viewsets import ModelViewSet
 from . import (
     ServiceSerializers, 
-    # ArtisanServiceSerializers, 
+    ServiceCategorySerializers,
     ArtisanProfile, 
     # ArtisanService
-    Services
+    Services,
+    Category
     )
 
 
 class ServiceTypeViewSet(ModelViewSet):
-    queryset = Services.objects.select_related("artisan", "service")
+    queryset = Services.objects.all()
     serializer_class = ServiceSerializers
+    
+    
+class CategoryViewSet(ModelViewSet):
+    queryset = Category.objects.prefetch_related("services")
+    serializer_class = ServiceCategorySerializers

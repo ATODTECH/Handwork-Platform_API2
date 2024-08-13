@@ -1,2 +1,2 @@
-from services.models import ArtisanProfile, Services
-from services.serializers.service_serializers import ServiceSerializers
+from services.models import ArtisanProfile, Services, Category
+from services.serializers.service_serializers import ServiceSerializers, ServiceCategorySerializers

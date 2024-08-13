@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from . import Services
+from . import Services, Category
 
 
 class ServiceSerializers(serializers.ModelSerializer):
@@ -8,7 +8,12 @@ class ServiceSerializers(serializers.ModelSerializer):
         fields = ("name", "description", "active")
 
 
-# class ArtisanServiceSerializers(serializers.ModelSerializer):
-#     class Meta:
-#         model = ArtisanService
-#         fields = ("artisan", "service")
+class ServiceCategorySerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = "__all__"
+        
+    def to_representation(self, instance):
+        representation = super(ServiceCategorySerializers, self).to_representation(instance)
+        representation["services"] = [{"id": service.id, "name":service.name} for service in instance.services.all()]
+        return representation

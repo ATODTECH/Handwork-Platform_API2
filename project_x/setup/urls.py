@@ -4,11 +4,15 @@ from rest_framework import routers
 
 
 from main.views.user_auth import SignUpUserView, SignInUserView, ArtisanProfileView
+from services.views.service import ServiceTypeViewSet, CategoryViewSet
 
 router = routers.DefaultRouter()
 
 router.register("signup/user", SignUpUserView, basename='signup-user')
 router.register("artisan-profile", ArtisanProfileView, basename='artisan_profile')
+router.register("services", ServiceTypeViewSet, basename="service-type")
+router.register("category", CategoryViewSet, basename='categories')
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),

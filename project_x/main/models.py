@@ -36,7 +36,7 @@ class User(AbstractUser):
     last_name = models.CharField(max_length=250)
     email = models.EmailField(max_length=254, unique=True)
     password = models.CharField(max_length=128)
-    contact = models.CharField(max_length=15, unique=True)
+    contact = models.CharField(max_length=15, unique=False)
     profile_image = models.ImageField(null=True)
     is_artisan = models.BooleanField(default=False)
     is_professional = models.BooleanField(default=False)
