@@ -8,6 +8,7 @@ import re
 
 
 class UserSerializer(serializers.ModelSerializer):
+    message = serializers.CharField(read_only=True)
     class Meta:
         model = User
         fields = ("id", "first_name", "last_name", "email", "contact", "password")
@@ -50,6 +51,8 @@ class UserSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super(UserSerializer, self).to_representation(instance)
         artisan_profiles = ArtisanProfile.objects.filter(user=instance)
+        representation["status"] = True
+        representation["message"] = "Success"
         representation["artisan"] = ArtisanProfileSerializer(artisan_profiles, many=True).data
         return representation
 
@@ -75,7 +78,8 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         
         # Add custom data to the response
         data.update({
-            "status": "Login Successful",
+            "status": True,
+            "message": "Login Successful",
             "id": user_id,
             "refresh": str(refresh),
             "access": str(refresh.access_token),
