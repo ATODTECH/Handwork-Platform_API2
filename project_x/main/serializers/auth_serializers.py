@@ -2,6 +2,7 @@ from main.models import User, ArtisanProfile
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import get_object_or_404, Http404
 import re
 
@@ -54,6 +55,37 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        # Obtain the original token from the superclass
+        token = super().get_token(user)
+
+        # Add custom claims to the token
+        token['email'] = user.email
+        return token
+    
+    def validate(self, attrs):
+        # Validate the incoming data using the superclass method
+        data = super().validate(attrs)
+        
+        # Get the user's ID and generate the refresh token
+        user_id = self.user.id
+        refresh = self.get_token(self.user)
+        
+        # Add custom data to the response
+        data.update({
+            "status": "Login Successful",
+            "id": user_id,
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "name": f"{self.user.first_name} {self.user.last_name}"
+        })
+        
+        return data
+
+
+
 class ArtisanProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = ArtisanProfile
@@ -65,15 +97,15 @@ class ArtisanProfileSerializer(serializers.ModelSerializer):
         return representation
 
 
-class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
-    def validate(self, attrs):
-        contact = attrs.get("contact")
-        password = attrs.get("password")
+# class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+#     def validate(self, attrs):
+#         contact = attrs.get("contact")
+#         password = attrs.get("password")
 
-        user = authenticate(request=self.context.get("request"), contact=contact, password=password)
+#         user = authenticate(request=self.context.get("request"), contact=contact, password=password)
 
-        if not user:
-            raise AuthenticationFailed(
-                'No active account found with the given credentials'
-            )
-        return super().validate(attrs)
+#         if not user:
+#             raise AuthenticationFailed(
+#                 'No active account found with the given credentials'
+#             )
+#         return super().validate(attrs)

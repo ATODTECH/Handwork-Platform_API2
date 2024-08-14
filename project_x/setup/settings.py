@@ -1,5 +1,6 @@
 from pathlib import Path
 import environ
+from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,11 +51,12 @@ ROOT_URLCONF = 'setup.urls'
 
 
 SIMPLE_JWT = {
-
-"TOKEN_OBTAIN_SERIALIZER": "main.serializers.auth_serializer.MyTokenObtainPairSerializer",
-
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    "TOKEN_OBTAIN_SERIALIZER": "main.serializers.auth_serializer.MyTokenObtainPairSerializer",
 }
-
+    
+    
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]

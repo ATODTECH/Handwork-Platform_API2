@@ -1,8 +1,8 @@
 from main.models import ArtisanProfile, User
 from rest_framework.viewsets import ModelViewSet
-from main.serializers.auth_serializers import UserSerializer, TokenObtainPairSerializer, ArtisanProfileSerializer
+from main.serializers.auth_serializers import UserSerializer, ArtisanProfileSerializer, MyTokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
-
+from rest_framework import permissions
 
 class SignUpUserView(ModelViewSet):
     queryset = User.objects.all()
@@ -15,5 +15,5 @@ class ArtisanProfileView(ModelViewSet):
 
 
 class SignInUserView(TokenObtainPairView):
-    # permission_classes = (permissions.AllowAny,)
-    serializer_class = TokenObtainPairSerializer
+    permission_classes = (permissions.AllowAny,)
+    serializer_class = MyTokenObtainPairSerializer
