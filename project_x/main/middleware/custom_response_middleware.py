@@ -46,12 +46,10 @@ class CustomResponseMiddleware(MiddlewareMixin):
             return JsonResponse({
                 'status': False,
                 'message': str(exception),  # Return the detailed exception message
-                'data': traceback.format_exc()  # Optional: full stack trace in response (for debugging)
             }, status=400)
 
         # For non-DRF handled exceptions
         return JsonResponse({
             'status': False,
-            'message': str(exception),  # Return the exception message
-            'data': traceback.format_exc()  # Optional: stack trace for debugging
+            'message': str(exception),  # Return the exception message # Optional: stack trace for debugging
         }, status=500)
