@@ -30,6 +30,18 @@ class CustomUserManager(BaseUserManager):
 
 
 class User(AbstractUser):
+    
+    ROLE = (
+        ("USER", "USER"),
+        ("ARTISAN", "ARTISAN")
+    )
+    
+    DOCUMENT_TYPE = (
+        ("DL", "Driver's License"),
+        ("PSP", "Passport"),
+        ("NIN", "NIN Slip/Card")
+    )
+    
     # User Information
     id = models.UUIDField(default=uuid4, primary_key=True)
     first_name = models.CharField(max_length=250)
@@ -38,8 +50,15 @@ class User(AbstractUser):
     password = models.CharField(max_length=128)
     contact = models.CharField(max_length=15, unique=False)
     profile_image = models.ImageField(null=True)
-    is_artisan = models.BooleanField(default=False)
-    is_professional = models.BooleanField(default=False)
+    
+    # Artisan Information
+    state = models.CharField(max_length=40, null=True)
+    city = models.CharField(max_length=40, null=True)
+    nin = models.CharField(max_length=11, null=True)
+    bvn = models.CharField(max_length=11, null=True)
+    document = models.FileField(upload_to='onboarding_docs', null=True)
+    document_type = models.CharField(choices=DOCUMENT_TYPE, max_length=16, null=True)
+    role = models.CharField(max_length=7, choices=ROLE, default="USER")
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
@@ -53,21 +72,47 @@ class User(AbstractUser):
         return super(User, self).save(*args, **kwargs)
 
 
-class ArtisanProfile(models.Model):
-    EXPERIENCE = (
-        ("1", "1"),
-        ("2", "2"),
-        ("3", "3"),
-        ("4 & Above", "4 & Above")
-    )
-    
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    address = models.CharField(max_length=450)
-    longitude = models.CharField(max_length=15)
-    latitude = models.CharField(max_length=15)
-    business_contact = models.CharField(max_length=15, unique=True)
-    service_type = models.ManyToManyField('services.Services')
-    years_of_experience = models.CharField(choices=EXPERIENCE, max_length=9, null=True)
+class Skill(models.Model):
+    artisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
+    description = models.TextField()
+    base_charge = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    cap_charge = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)  
+    weekdays_only = models.BooleanField(default=False)
+    weekends_only = models.BooleanField(default=False)
+    weekdays_and_weekends = models.BooleanField(default=True)
     
     def __str__(self):
-        return f"{self.user.first_name}"
+        return self.artisan.first_name
+    
+    
+class BankDetails(models.Model):
+    aartisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
+    name = models.CharField(max_length=100)
+    account_number = models.CharField(max_length=10)
+    account_name = models.CharField(max_length=350)
+    payment_on_delivery = models.BooleanField(default=False)
+    escrow_payment = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return self.account_name
+    
+    
+    
+# class ArtisanProfile(models.Model):
+#     EXPERIENCE = (
+#         ("1", "1"),
+#         ("2", "2"),
+#         ("3", "3"),
+#         ("4 & Above", "4 & Above")
+#     )
+    
+#     user = models.ForeignKey(User, on_delete=models.CASCADE, limit_choices_to={'role':'ARTISAN'})
+#     address = models.CharField(max_length=450)
+#     longitude = models.CharField(max_length=15)
+#     latitude = models.CharField(max_length=15)
+#     business_contact = models.CharField(max_length=15, unique=True)
+#     service_type = models.ManyToManyField('services.Services')
+#     years_of_experience = models.CharField(choices=EXPERIENCE, max_length=9, null=True)
+    
+#     def __str__(self):
+#         return f"{self.user.first_name}"

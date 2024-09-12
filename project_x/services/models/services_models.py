@@ -1,5 +1,5 @@
 from django.contrib.auth.models import models
-from . import ArtisanProfile
+# from . import ArtisanProfile
 
 
 class Services(models.Model):

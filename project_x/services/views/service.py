@@ -2,8 +2,8 @@ from rest_framework.viewsets import ModelViewSet
 from . import (
     ServiceSerializers, 
     ServiceCategorySerializers,
-    ArtisanProfile, 
-    # ArtisanService
+    # ArtisanProfile, 
+    # ArtisanService,
     Services,
     Category
     )

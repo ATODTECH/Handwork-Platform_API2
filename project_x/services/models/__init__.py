@@ -1,3 +1,3 @@
-from main.serializers.auth_serializers import ArtisanProfileSerializer, UserSerializer
-from main.models import User, ArtisanProfile
+from main.serializers.auth_serializers import UserSerializer
+from main.models import User
 from .services_models import Services, Category
