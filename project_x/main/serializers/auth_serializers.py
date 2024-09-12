@@ -1,4 +1,4 @@
-from main.models import User
+from main.models import User, Skill, BankDetails
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -31,6 +31,31 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class SkillSerializer(serializers.ModelSerializer):
+    artisan =serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    class Meta:
+        model = Skill
+        fields = ("id", "artisan", "description", "base_charge", "cap_charge", "weekdays_only", "weekends_only", "weekdays_and_weekends")
+    
+    def create(self, validated_data):
+        artisan = self.context['request'].user
+        instance = Skill(artisan=artisan, **validated_data)
+        instance.save()
+        return instance
+
+
+class BankDetailSerializer(serializers.ModelSerializer):
+    artisan =serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    class Meta:
+        model = BankDetails
+        fields = ("id", "artisan", "name", "account_name", "account_number", "payment_on_delivery", "escrow_payment")
+    
+    def create(self, validated_data):
+        artisan = self.context['request'].user
+        instance = BankDetails(artisan=artisan, **validated_data)
+        instance.save()
+        return instance
+
 
 class ArtisanSerializer(serializers.ModelSerializer):
     # message = serializers.CharField(read_only=True)
@@ -53,11 +78,6 @@ class ArtisanSerializer(serializers.ModelSerializer):
             instance.set_password(password)
             instance.save()
         return instance
-    
-    # def to_representation(self, instance):
-    #     representation = super(ArtisanSerializer, self).to_representation(instance)
-    #     representation['document'] = instance.document if instance.document else None
-    #     return representation
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -65,7 +85,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def get_token(cls, user):
         # Obtain the original token from the superclass
         token = super().get_token(user)
-        
+
         # Add custom claims to the token
         token['email'] = user.email
         return token
@@ -88,28 +108,3 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         
         return data
 
-
-
-# class ArtisanProfileSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = ArtisanProfile
-#         fields = "__all__"
-        
-#     def to_representation(self, instance):
-#         representation = super(ArtisanProfileSerializer, self).to_representation(instance)
-#         representation["service_type"] = [service.name for service in instance.service_type.all()]
-#         return representation
-
-
-# class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
-#     def validate(self, attrs):
-#         contact = attrs.get("contact")
-#         password = attrs.get("password")
-
-#         user = authenticate(request=self.context.get("request"), contact=contact, password=password)
-
-#         if not user:
-#             raise AuthenticationFailed(
-#                 'No active account found with the given credentials'
-#             )
-#         return super().validate(attrs)

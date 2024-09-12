@@ -83,10 +83,10 @@ class Skill(models.Model):
     
     def __str__(self):
         return self.artisan.first_name
-    
-    
+
+
 class BankDetails(models.Model):
-    aartisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
+    artisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
     name = models.CharField(max_length=100)
     account_number = models.CharField(max_length=10)
     account_name = models.CharField(max_length=350)
