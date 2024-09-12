@@ -1,1 +1,1 @@
-from services.models import Services, Category
+from services.models import Services, Category, BookService
