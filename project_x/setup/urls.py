@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
 from main.views.user_auth import SignUpUserView, SignInUserView, SignUpArtisanViewSet, SkillViewSet, BankDetailViewSet
-from services.views.service import ServiceTypeViewSet, CategoryViewSet
+from services.views.service import ServiceTypeViewSet, CategoryViewSet, ServiceBookingViewSet
 
 
 router = routers.DefaultRouter()
@@ -13,7 +13,7 @@ router.register("skill", SkillViewSet, basename='artisan-skill')
 router.register("services", ServiceTypeViewSet, basename="service-type")
 router.register("category", CategoryViewSet, basename='categories')
 router.register("bank_details", BankDetailViewSet, basename='artisan_bank')
-
+router.register("booking", ServiceBookingViewSet, basename='service-booking')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

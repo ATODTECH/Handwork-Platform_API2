@@ -34,13 +34,12 @@ class SignUpArtisanViewSet(ViewSet):
             return response.Response(serializer.data, status=status.HTTP_201_CREATED)
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, url_path='get_artisan', url_name='retrieve_artisan')
+    @action(detail=True, methods=['put', 'patch'], url_path='get_artisan', url_name='retrieve_artisan')
     def retrieve_artisan(self, request, pk=None):
         try:
             artisan = self.get_queryset().get(id=pk)
         except User.DoesNotExist:
             raise NotFound("Artisan not found.")
-        
         serializer = ArtisanSerializer(artisan)
         return response.Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -76,7 +75,7 @@ class BankDetailViewSet(ViewSet):
             serializer.save()
             return response.Response(serializer.data, status=status.HTTP_201_CREATED)
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     def list(self, request):
         queryset = self.get_queryset()
         serializer = BankDetailSerializer(queryset, many=True)
