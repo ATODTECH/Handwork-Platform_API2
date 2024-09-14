@@ -29,3 +29,22 @@ class BookService(models.Model):
     
     def __str__(self):
         return self.completed
+    
+
+class BookingSchedule(models.Model):
+    SERVICE_REQUIREMENT = (
+        ("OD", "One Day"),
+        ("ND", "A Number of Days")
+    )
+    booking_service = models.ForeignKey(BookService, on_delete=models.CASCADE)
+    start_date = models.DateTimeField()
+    estimated_delivery_date = models.DateField()
+    
+
+class BookingPaymentOption(models.Model):
+    booking_service = models.ForeignKey(BookService, on_delete=models.CASCADE)
+    escrow_payment = models.BooleanField(default=False)
+    cash_payment = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return self.booking_service

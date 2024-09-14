@@ -11,7 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
     # message = serializers.CharField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "password")
+        fields = ("id", "first_name", "last_name", "email", "contact", "role", "password")
 
     def create(self, validated_data):
         # Extract password from validated_data
