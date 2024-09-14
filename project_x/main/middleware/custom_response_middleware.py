@@ -10,8 +10,11 @@ class CustomResponseMiddleware(MiddlewareMixin):
         if request.path.startswith('/swagger') or request.path.startswith('/redoc'):
             return response
 
+        # Check if 'Content-Type' header exists in the response
+        content_type = response.headers.get('Content-Type', '')
+
         # Skip custom processing for HTML responses (e.g., Swagger UI)
-        if 'text/html' in response['Content-Type']:
+        if 'text/html' in content_type:
             return response
 
         # Check if it's an error (e.g., 4xx or 5xx)
