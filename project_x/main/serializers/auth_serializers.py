@@ -11,7 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
     # message = serializers.CharField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "role", "password")
+        fields = ("id", "first_name", "last_name", "email", "contact", "gender", "role", "city", "country", "state", "password")
 
     def create(self, validated_data):
         # Extract password from validated_data
@@ -62,6 +62,15 @@ class ArtisanSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "document_type", "role", "password")
+        
+    extra_kwargs = {
+            'nin': {'required': False},
+            'bvn': {'required': False},
+            'document': {'required': False},
+            'document_type': {'required': False},
+            'role': {'required': False},
+            'state': {'required': False},
+        }
 
     def create(self, validated_data):
         # Extract password from validated_data

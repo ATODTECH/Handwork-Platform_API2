@@ -42,6 +42,11 @@ class User(AbstractUser):
         ("NIN", "NIN Slip/Card")
     )
     
+    GENDER_CHOICES = (
+        ("MALE", "MALE"),
+        ("FEMALE", "FEMALE")
+    )
+    
     # User Information
     id = models.UUIDField(default=uuid4, primary_key=True)
     first_name = models.CharField(max_length=250)
@@ -50,10 +55,12 @@ class User(AbstractUser):
     password = models.CharField(max_length=128)
     contact = models.CharField(max_length=15, unique=False)
     profile_image = models.ImageField(null=True)
+    gender = models.CharField(max_length=6, choices=GENDER_CHOICES, null=True)
     
     # Artisan Information
     state = models.CharField(max_length=40, null=True)
     city = models.CharField(max_length=40, null=True)
+    country = models.CharField(max_length=80, null=True)
     nin = models.CharField(max_length=11, null=True)
     bvn = models.CharField(max_length=11, null=True)
     document = models.FileField(upload_to='onboarding_docs', null=True)
