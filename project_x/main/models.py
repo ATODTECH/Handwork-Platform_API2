@@ -56,9 +56,10 @@ class User(AbstractUser):
     contact = models.CharField(max_length=15, unique=False)
     profile_image = models.ImageField(null=True)
     gender = models.CharField(max_length=6, choices=GENDER_CHOICES, null=True)
-    
+    address = models.TextField(null=True)
     # Artisan Information
     state = models.CharField(max_length=40, null=True)
+    
     city = models.CharField(max_length=40, null=True)
     country = models.CharField(max_length=80, null=True)
     nin = models.CharField(max_length=11, null=True)

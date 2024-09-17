@@ -11,7 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
     # message = serializers.CharField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "gender", "role", "city", "country", "state", "password")
+        fields = ("id", "first_name", "last_name","address", "email", "contact", "gender", "role", "city", "country", "state", "password")
         
     def validate(self, attrs):
         password = attrs.get("password")
@@ -64,7 +64,7 @@ class ArtisanSerializer(serializers.ModelSerializer):
     # message = serializers.CharField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "document_type", "role", "password")
+        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "role", "password")
         
     extra_kwargs = {
             'nin': {'required': False},
@@ -81,7 +81,7 @@ class ArtisanSerializer(serializers.ModelSerializer):
         if password:
             # Validate the password using regular expressions
             if not re.match(r'^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*\W).+$', password):
-                raise ValidationError(
+                raise serializers.ValidationError(
                     {"error": "Passwords must include at least one special symbol, one number, one lowercase letter, and one uppercase letter."})
 
         instance = User.objects.create(**validated_data)
