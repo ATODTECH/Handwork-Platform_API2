@@ -20,6 +20,8 @@ class UserSerializer(serializers.ModelSerializer):
             if not re.match(r'^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*\W).+$', password):
                 raise serializers.ValidationError(
                     {"error": "Passwords must include at least one special symbol, one number, one lowercase letter, and one uppercase letter."})
+            if len(password) <= 5:
+                raise serializers.ValidationError("Passwords must be more than 5 characters.")
         return attrs
 
     def create(self, validated_data):
