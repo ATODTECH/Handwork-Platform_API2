@@ -15,6 +15,7 @@ class UserSerializer(serializers.ModelSerializer):
         
     def validate(self, attrs):
         password = attrs.get("password")
+        
         if password:
             # Validate the password using regular expressions
             if not re.match(r'^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*\W).+$', password):
@@ -23,6 +24,14 @@ class UserSerializer(serializers.ModelSerializer):
             if len(password) <= 5:
                 raise serializers.ValidationError("Passwords must be more than 5 characters.")
         return attrs
+    
+    def validate_email(self, value):
+        """
+        Check that the email is unique.
+        """
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("This email is already registered.")
+        return value
 
     def create(self, validated_data):
         # Extract password from validated_data
