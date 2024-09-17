@@ -7,24 +7,31 @@ from . import (
     ServiceSerializers, 
     ServiceCategorySerializers,
     ServiceBookingSerializer,
+    ServiceSubcategorySerializers,
     
     # Model
     Services,
     Category,
     BookService,
-    User
+    User,
+    SubCategory
     )
 
 
-class ServiceTypeViewSet(ModelViewSet):
+class ServiceViewSet(ModelViewSet):
     queryset = Services.objects.all()
     serializer_class = ServiceSerializers
     
     
 class CategoryViewSet(ModelViewSet):
-    queryset = Category.objects.prefetch_related("services")
+    queryset = Category.objects.all()
     serializer_class = ServiceCategorySerializers
-    
+
+
+class SubCategoryViewSet(ModelViewSet):
+    queryset = SubCategory.objects.select_related("category").prefetch_related("services")
+    serializer_class = ServiceSubcategorySerializers
+
 
 class ServiceBookingViewSet(ViewSet):
     def get_queryset(self):

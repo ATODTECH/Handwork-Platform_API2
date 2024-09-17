@@ -1,18 +1,27 @@
 from rest_framework import serializers
-from . import Services, Category, BookService, User
+from . import Services, Category, BookService, User, SubCategory
 
 
 class ServiceSerializers(serializers.ModelSerializer):
+    client = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     class Meta:
         model = Services
-        fields = ("id", "name", "description", "active")
+        fields = ("id", "client", "name", "description", "active")
 
 
 class ServiceCategorySerializers(serializers.ModelSerializer):
-    # message = serializers.CharField(read_only=True)
     class Meta:
         model = Category
-        fields = "__all__"
+        fields = ("name")
+        
+        
+class ServiceSubcategorySerializers(serializers.ModelSerializer):
+    services = ServiceCategorySerializers()
+    class Meta:
+        model = SubCategory
+        fields = ("id", "name", "category", "services")
+        
+
 
 
 class ServiceBookingSerializer(serializers.ModelSerializer):

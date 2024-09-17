@@ -12,16 +12,19 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("id", "first_name", "last_name", "email", "contact", "gender", "role", "city", "country", "state", "password")
+        
+    def validate(self, attrs):
+        password = attrs.get("password")
+        if password:
+            # Validate the password using regular expressions
+            if not re.match(r'^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*\W).+$', password):
+                raise serializers.ValidationError(
+                    {"error": "Passwords must include at least one special symbol, one number, one lowercase letter, and one uppercase letter."})
+        return attrs
 
     def create(self, validated_data):
         # Extract password from validated_data
         password = validated_data.pop("password", None)
-        
-        if password:
-            # Validate the password using regular expressions
-            if not re.match(r'^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*\W).+$', password):
-                raise ValidationError(
-                    {"error": "Passwords must include at least one special symbol, one number, one lowercase letter, and one uppercase letter."})
 
         instance = User.objects.create(**validated_data)
         if password:

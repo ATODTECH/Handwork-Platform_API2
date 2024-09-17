@@ -4,9 +4,11 @@ from main.models import User
 
 
 class Services(models.Model):
+    client = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     name = models.CharField(max_length=250, unique=True)
     description = models.TextField()
     active = models.BooleanField(default=True)
+    # thumbnail = models.ImageField()
     
     def __str__(self):
         return self.name
@@ -14,11 +16,19 @@ class Services(models.Model):
 
 class Category(models.Model):
     name = models.CharField(max_length=100)
-    services = models.ManyToManyField(Services, related_name="service_category")
     
     def __str__(self):
         return self.name
-    
+
+
+class SubCategory(models.Model):
+    name = models.CharField(max_length=30, unique=True)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE)
+    services = models.ManyToManyField(Services, related_name="service_categories")
+
+    def __str__(self):
+        return self.name
+
 
 class BookService(models.Model):
     artisan = models.ForeignKey(User, on_delete=models.SET_NULL, limit_choices_to={'role': 'ARTISAN'}, null=True)
