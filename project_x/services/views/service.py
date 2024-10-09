@@ -8,6 +8,7 @@ from . import (
     ServiceCategorySerializers,
     ServiceBookingSerializer,
     ServiceSubcategorySerializers,
+    UserSerializer,
     
     # Model
     Services,
@@ -69,3 +70,28 @@ class ServiceBookingViewSet(ViewSet):
             serializer.save()
             return response.Response(serializer.data, status=status.HTTP_200_OK)
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+# Service Search
+class ServiceSearchViewSet(ViewSet):
+    # @action(methods=['get'], url_name='service', detail=False)
+    def list(self, request):
+        search_param = request.query_params.get("search")
+        
+        if not search_param:
+            return response.Response({"detail": "Input Search Parameter"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        service = Services.objects.filter(name__icontains=search_param)
+        
+        if not service.exists():
+            return response.Response({"detail": "Parameter provided doesn't match any data on record"}, status=status.HTTP_204_NO_CONTENT)
+        
+        results = [
+            {
+                "name": services.name,
+                "artisans": UserSerializer(services.client, many=True).data
+            }
+            for services in service
+        ]
+        
+        return response.Response(results, status=status.HTTP_200_OK)
