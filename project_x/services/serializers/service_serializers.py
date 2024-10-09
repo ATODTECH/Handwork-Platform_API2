@@ -23,7 +23,6 @@ class ServiceSubcategorySerializers(serializers.ModelSerializer):
         
 
 
-
 class ServiceBookingSerializer(serializers.ModelSerializer):
     artisan = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='ARTISAN'), required=False)
     client = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='USER'), required=False)

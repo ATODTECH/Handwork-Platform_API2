@@ -126,7 +126,8 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             "id": user_id,
             "refresh": str(refresh),
             "access": str(refresh.access_token),
-            "name": f"{self.user.first_name} {self.user.last_name}"
+            "name": f"{self.user.first_name} {self.user.last_name}",
+            "role": self.user.role
         })
         
         return data
