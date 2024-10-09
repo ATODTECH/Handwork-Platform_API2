@@ -12,7 +12,7 @@ class ServiceSerializers(serializers.ModelSerializer):
 class ServiceCategorySerializers(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ("name")
+        fields = "__all__"
         
         
 class ServiceSubcategorySerializers(serializers.ModelSerializer):
