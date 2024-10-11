@@ -11,7 +11,8 @@ class UserSerializer(serializers.ModelSerializer):
     # message = serializers.CharField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name","address", "email", "contact", "gender", "role", "city", "country", "state", "password")
+        fields = ("id", "first_name", "last_name", "address", "email", "contact", "gender", "role", 
+                  "city", "country", "state", "longitude", "latitude", "password")
         
     def validate(self, attrs):
         password = attrs.get("password")
@@ -75,7 +76,7 @@ class ArtisanSerializer(serializers.ModelSerializer):
     # message = serializers.CharField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "role", "password")
+        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "longitude", "latitude", "role", "password")
         
     extra_kwargs = {
             'nin': {'required': False},
@@ -127,8 +128,9 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             "refresh": str(refresh),
             "access": str(refresh.access_token),
             "name": f"{self.user.first_name} {self.user.last_name}",
-            "role": self.user.role
+            "role": self.user.role,
+            "longitude": self.user.longitude,
+            "latitude": self.user.latitude
         })
         
         return data
-

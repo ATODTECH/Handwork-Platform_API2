@@ -83,7 +83,6 @@ class User(AbstractUser):
             random_username = "".join(random.choices(string.ascii_lowercase + string.digits, k=5))
             self.username=random_username
         return super(User, self).save(*args, **kwargs)
-    
 
 
 
