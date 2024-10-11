@@ -59,8 +59,10 @@ class User(AbstractUser):
     address = models.TextField(null=True)
     # Artisan Information
     state = models.CharField(max_length=40, null=True)
-    
     city = models.CharField(max_length=40, null=True)
+    latitude = models.CharField(max_length=10, null=True)
+    longitude = models.CharField(max_length=10, null=True)
+
     country = models.CharField(max_length=80, null=True)
     nin = models.CharField(max_length=11, null=True)
     bvn = models.CharField(max_length=11, null=True)
