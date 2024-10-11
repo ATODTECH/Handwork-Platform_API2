@@ -1,2 +1,2 @@
-from services.models import Services, Category, SubCategory, BookService
+from services.models import Services, BookService
 from main.models import User

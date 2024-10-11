@@ -5,33 +5,19 @@ from rest_framework.exceptions import NotFound
 from . import (
     # Serializers
     ServiceSerializers, 
-    ServiceCategorySerializers,
     ServiceBookingSerializer,
-    ServiceSubcategorySerializers,
     UserSerializer,
     
     # Model
     Services,
-    Category,
     BookService,
-    User,
-    SubCategory
+    User
     )
 
 
 class ServiceViewSet(ModelViewSet):
     queryset = Services.objects.all()
     serializer_class = ServiceSerializers
-    
-    
-class CategoryViewSet(ModelViewSet):
-    queryset = Category.objects.all()
-    serializer_class = ServiceCategorySerializers
-
-
-class SubCategoryViewSet(ModelViewSet):
-    queryset = SubCategory.objects.select_related("category").prefetch_related("services")
-    serializer_class = ServiceSubcategorySerializers
 
 
 class ServiceBookingViewSet(ViewSet):

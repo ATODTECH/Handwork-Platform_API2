@@ -12,7 +12,6 @@ from django.core.exceptions import ValidationError
 import re
 
 
-
 class SignUpUserView(ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -31,9 +30,7 @@ class SignUpUserView(ModelViewSet):
 
             headers = self.get_success_headers(serializer.data)
             return response.Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 class ResetPassword(APIView):

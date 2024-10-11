@@ -4,28 +4,12 @@ from main.models import User
 
 
 class Services(models.Model):
-    client = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+    client = models.ManyToManyField(User, related_name="client_services")
     name = models.CharField(max_length=250, unique=True)
     description = models.TextField()
     active = models.BooleanField(default=True)
     # thumbnail = models.ImageField()
     
-    def __str__(self):
-        return self.name
-    
-
-class Category(models.Model):
-    name = models.CharField(max_length=100)
-    
-    def __str__(self):
-        return self.name
-
-
-class SubCategory(models.Model):
-    name = models.CharField(max_length=30, unique=True)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    services = models.ManyToManyField(Services, related_name="service_categories")
-
     def __str__(self):
         return self.name
 
