@@ -12,6 +12,14 @@ class Services(models.Model):
     
     def __str__(self):
         return self.name
+    
+
+class Category(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    service = models.ForeignKey(Services, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return self.name
 
 
 class BookService(models.Model):
