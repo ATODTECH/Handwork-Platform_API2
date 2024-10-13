@@ -10,7 +10,7 @@ from django.db import IntegrityError
 from rest_framework.views import APIView
 from django.core.exceptions import ValidationError
 import re
-
+from django.shortcuts import get_object_or_404
 
 class SignUpUserView(ModelViewSet):
     queryset = User.objects.all()
@@ -107,6 +107,17 @@ class SkillViewSet(ViewSet):
     def list(self, request):
         skill = self.get_queryset()
         serializer = SkillSerializer(skill, many=True)
+        return response.Response(serializer.data, status=status.HTTP_200_OK)
+    
+    # @action(methods=['get'], url_name='skill-retrieve', url_path='skill', detail=True)
+    def retrieve(self, request, pk=None):
+        # Use get_object_or_404 to handle invalid pk and raise a 404 error if skill doesn't exist
+        skill = get_object_or_404(self.get_queryset(), pk=pk)
+        
+        # Serialize the object
+        serializer = SkillSerializer(skill)
+        
+        # Return the serialized data with a 200 OK status
         return response.Response(serializer.data, status=status.HTTP_200_OK)
 
 

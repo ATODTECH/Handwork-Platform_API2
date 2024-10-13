@@ -1,4 +1,5 @@
 from main.models import User, Skill, BankDetails
+from services.models.services_models import Services
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -48,15 +49,31 @@ class UserSerializer(serializers.ModelSerializer):
 
 class SkillSerializer(serializers.ModelSerializer):
     artisan =serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    services = serializers.PrimaryKeyRelatedField(queryset=Services.objects.all(), many=True)
     class Meta:
         model = Skill
-        fields = ("id", "artisan", "description", "base_charge", "cap_charge", "weekdays_only", "weekends_only", "weekdays_and_weekends")
+        fields = ("id", "artisan", "services", "description", "base_charge", "cap_charge", "weekdays_only", "weekends_only", "weekdays_and_weekends")
     
     def create(self, validated_data):
+        # Set the artisan to the current user from the request
         artisan = self.context['request'].user
-        instance = Skill(artisan=artisan, **validated_data)
-        instance.save()
+
+        # Extract services from validate_Data since it cannot be assigned directly
+        services = validated_data.pop('services')
+        
+        # Create the Skill instance without services
+        instance = Skill.objects.create(artisan=artisan, **validated_data)
+        
+        # Set the many-to-many field for services
+        instance.services.set(services)
+
         return instance
+    
+    def to_representation(self, instance):
+       representation = super().to_representation(instance)
+       representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
+       representation['services'] = [service.name for service in instance.services.all()]
+       return representation
 
 
 class BankDetailSerializer(serializers.ModelSerializer):
