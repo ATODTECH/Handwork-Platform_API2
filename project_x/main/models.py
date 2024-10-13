@@ -4,6 +4,7 @@ from django.db import models
 from django.utils import timezone
 from uuid import uuid4
 from datetime import timedelta
+# from services.models.services_models import Services
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -90,7 +91,8 @@ class Skill(models.Model):
     artisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
     description = models.TextField()
     base_charge = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    cap_charge = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)  
+    cap_charge = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    services = models.ManyToManyField("services.Services", related_name="artisan_services")
     weekdays_only = models.BooleanField(default=False)
     weekends_only = models.BooleanField(default=False)
     weekdays_and_weekends = models.BooleanField(default=True)
