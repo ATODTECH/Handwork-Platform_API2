@@ -16,7 +16,7 @@ class Services(models.Model):
 
 class Category(models.Model):
     name = models.CharField(max_length=50, unique=True)
-    service = models.ForeignKey(Services, on_delete=models.CASCADE)
+    service = models.ManyToManyField(Services, related_name="service_categories")
 
     def __str__(self):
         return self.name

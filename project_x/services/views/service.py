@@ -7,11 +7,13 @@ from . import (
     ServiceSerializers, 
     ServiceBookingSerializer,
     UserSerializer,
+    CategorySerializers,
     
     # Model
     Services,
     BookService,
-    User
+    User,
+    Category
     )
 
 
@@ -60,7 +62,6 @@ class ServiceBookingViewSet(ViewSet):
 
 # Service Search
 class ServiceSearchViewSet(ViewSet):
-    # @action(methods=['get'], url_name='service', detail=False)
     def list(self, request):
         search_param = request.query_params.get("search")
         
@@ -78,6 +79,10 @@ class ServiceSearchViewSet(ViewSet):
                 "artisans": UserSerializer(services.client, many=True).data
             }
             for services in service
-        ]
-        
+        ] 
         return response.Response(results, status=status.HTTP_200_OK)
+    
+
+class CategoryViewSet(ModelViewSet):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializers
