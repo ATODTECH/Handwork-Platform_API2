@@ -86,7 +86,6 @@ class User(AbstractUser):
         return super(User, self).save(*args, **kwargs)
 
 
-
 class Skill(models.Model):
     artisan = models.ForeignKey(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
     description = models.TextField()
@@ -111,24 +110,3 @@ class BankDetails(models.Model):
     
     def __str__(self):
         return self.account_name
-    
-    
-    
-# class ArtisanProfile(models.Model):
-#     EXPERIENCE = (
-#         ("1", "1"),
-#         ("2", "2"),
-#         ("3", "3"),
-#         ("4 & Above", "4 & Above")
-#     )
-    
-#     user = models.ForeignKey(User, on_delete=models.CASCADE, limit_choices_to={'role':'ARTISAN'})
-#     address = models.CharField(max_length=450)
-#     longitude = models.CharField(max_length=15)
-#     latitude = models.CharField(max_length=15)
-#     business_contact = models.CharField(max_length=15, unique=True)
-#     service_type = models.ManyToManyField('services.Services')
-#     years_of_experience = models.CharField(choices=EXPERIENCE, max_length=9, null=True)
-    
-#     def __str__(self):
-#         return f"{self.user.first_name}"
