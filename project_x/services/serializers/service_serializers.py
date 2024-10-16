@@ -19,6 +19,7 @@ class CategorySerializers(serializers.ModelSerializer):
        representation['service'] = [service_category.name for service_category in instance.service.all()]
        return representation
 
+
 class ServiceBookingSerializer(serializers.ModelSerializer):
     artisan = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='ARTISAN'), required=False)
     client = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='USER'), required=False)
@@ -33,3 +34,4 @@ class ServiceBookingSerializer(serializers.ModelSerializer):
         instance = BookService(client=client, **validated_data)
         instance.save()
         return instance
+    

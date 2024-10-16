@@ -88,7 +88,7 @@ class User(AbstractUser):
 
 
 class Skill(models.Model):
-    artisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
+    artisan = models.ForeignKey(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
     description = models.TextField()
     base_charge = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     cap_charge = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)

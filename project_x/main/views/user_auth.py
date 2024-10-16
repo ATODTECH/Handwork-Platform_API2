@@ -119,6 +119,13 @@ class SkillViewSet(ViewSet):
         
         # Return the serialized data with a 200 OK status
         return response.Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+class AvailableArtisansPerService(ViewSet):
+    def list(self, request, pk=None):
+        if pk is None:
+            return response.Response({"message": "Service ID required"})
+        
 
 
 class BankDetailViewSet(ViewSet):
@@ -139,3 +146,4 @@ class BankDetailViewSet(ViewSet):
         serializer = BankDetailSerializer(queryset, many=True)
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
+
