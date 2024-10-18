@@ -30,6 +30,9 @@ class ServiceSerializers(serializers.ModelSerializer):
                     "artisan": f"{skill.artisan.first_name} {skill.artisan.last_name}",
                     "about_me": skill.description,
                     "price_range": f"{skill.base_charge} - {skill.cap_charge}",
+                    "address": skill.artisan.address,
+                    "longitude": skill.artisan.longitude,
+                    "latitude": skill.artisan.latitude,
                     "services": [service.name for service in skill.services.all()],  # Collect service names in a list
                     "workdays": {"weekdays_and_weekends": skill.weekdays_and_weekends, 
                                  "weekdays_only": skill.weekdays_only, 
