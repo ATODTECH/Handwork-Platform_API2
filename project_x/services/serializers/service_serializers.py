@@ -69,5 +69,5 @@ class CategorySerializers(serializers.ModelSerializer):
 
     def to_representation(self, instance):
        representation = super().to_representation(instance)
-       representation['service'] = [service_category.name for service_category in instance.service.all()]
+       representation['service'] = [{'id': service_category.id, 'name':service_category.name} for service_category in instance.service.all()]
        return representation

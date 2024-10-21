@@ -49,15 +49,21 @@ class CategoryViewSet(ModelViewSet):
     serializer_class = CategorySerializers
 
 
+
 class GetServices(views.APIView):
-    def list(self, request):
-        try:
-            service = Services.objects.all()
-        except Services.DoesNotExist:
-            return response.Response("Services Does Not Exist", status=status.HTTP_404_NOT_FOUND)
-        
-        data = {
-            "id": service.id,
-            "name": service.name
-        }
+    def get(self, request):
+        services = Services.objects.all()
+
+        if not services.exists():
+            return response.Response({"detail": "Services do not exist"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Manually constructing the response data
+        data = [
+            {
+                "id": service.id,
+                "name": service.name
+            }
+            for service in services
+        ]
+
         return response.Response(data, status=status.HTTP_200_OK)
