@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
 from main.views.user_auth import SignUpUserView, SignInUserView, SignUpArtisanViewSet, SkillViewSet, BankDetailViewSet, ResetPassword
-from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet
+from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 
 
 router = routers.DefaultRouter()
@@ -21,4 +21,5 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path("api/reset/password", ResetPassword.as_view(), name='reset-password'),
     path('signin/client', SignInUserView.as_view(), name='token_obtain_pair'),
+    path('api/get_services', GetServices.as_view(), name='get_services')
 ]
