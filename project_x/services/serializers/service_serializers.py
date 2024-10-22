@@ -52,7 +52,7 @@ class ServiceSerializers(serializers.ModelSerializer):
 class CategorySerializers(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ("id", "name", "service")
+        fields = ("id", "name", "description", "service")
 
     def to_representation(self, instance):
        representation = super().to_representation(instance)
