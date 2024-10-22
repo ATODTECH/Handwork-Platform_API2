@@ -108,3 +108,14 @@ class BankDetails(models.Model):
     
     def __str__(self):
         return self.account_name
+    
+
+class OnboardingLevel(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    level_1 = models.BooleanField(default=False)
+    level_2 = models.BooleanField(default=False)
+    level_3 = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return self.user.id
+    
