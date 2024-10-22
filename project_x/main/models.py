@@ -70,7 +70,8 @@ class User(AbstractUser):
     document = models.FileField(upload_to='onboarding_docs', null=True)
     document_type = models.CharField(choices=DOCUMENT_TYPE, max_length=16, null=True)
     role = models.CharField(max_length=7, choices=ROLE, default="USER")
-    
+    onboardingComplete = models.BooleanField(default=False)
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 

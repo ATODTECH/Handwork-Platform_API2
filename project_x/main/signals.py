@@ -1,17 +1,17 @@
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 import logging
-from main.models import Skill
+from main.models import Skill, BankDetails, User
 from services.models.services_models import Services
+from django.shortcuts import get_object_or_404
 
-# @receiver(post_save, sender=Skill)
-# def add_artisan_to_service(sender, instance, created, **kwargs):
-#     if created:
-#         print(f"Signal triggered for Skill ID: {instance.id}")  # Debugging line
-#         artisan = instance.artisan
-#         services = instance.services.all()
+logger = logging.getLogger(__name__)
 
-#         for service in services:
-#             print(f"Assigning artisan {artisan} to service {service}")  # Debugging line
-#             service.client = artisan
-#             service.save()
+@receiver(post_save, sender=BankDetails)
+def mark_onboarding(sender, instance, created, **kwargs):
+    if created:
+        artisan_id = instance.artisan
+        user = get_object_or_404(User, id=artisan_id)
+        user.onboardingComplete = True
+        user.save()
+        logger.info(f"User {user.id} onboarded successfully")

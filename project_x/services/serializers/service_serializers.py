@@ -5,10 +5,11 @@ from django.shortcuts import get_object_or_404
 
 class ServiceSerializers(serializers.ModelSerializer):
     client = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
-    # skill = serializer.C
+
     class Meta:
         model = Services
         fields = ("id", "client", "name", "description", "active")
+        
     def to_representation(self, instance):
         representation = super(ServiceSerializers, self).to_representation(instance)
         
@@ -45,21 +46,7 @@ class ServiceSerializers(serializers.ModelSerializer):
         if not artisans:
             return []
 
-        # Exclude certain fields from the UserSerializer dynamically
-          # Ensure 'password' is removed if present
-
         return artisans    
-
-    # def artisan_skill(self, artisan):
-    #     # Get Artisan skill data (check if client is indeed an artisan)
-    #     try:
-    #         skill = Skill.objects.get(artisan=artisan)
-    #         artisan_skills = [skills.name for skills in skill]
-
-    #         return artisan_skills
-    #          # Return the description of the artisan's skill
-    #     except Skill.DoesNotExist:
-    #         return None 
 
 
 class CategorySerializers(serializers.ModelSerializer):
