@@ -28,6 +28,7 @@ class ServiceSerializers(serializers.ModelSerializer):
         # Collect all artisans associated with the skills
         artisans = [
                 {
+                    "artisan_id": skill.artisan.id, 
                     "artisan": f"{skill.artisan.first_name} {skill.artisan.last_name}",
                     "about_me": skill.description,
                     "price_range": f"{skill.base_charge} - {skill.cap_charge}",
