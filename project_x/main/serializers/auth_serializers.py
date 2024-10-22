@@ -9,11 +9,12 @@ import re
 
 
 class UserSerializer(serializers.ModelSerializer):
-    # message = serializers.CharField(read_only=True)
+    onboardingComplete = serializers.BooleanField(read_only=True)
+    
     class Meta:
         model = User
         fields = ("id", "first_name", "last_name", "address", "email", "contact", "gender", "role", 
-                  "city", "country", "state", "longitude", "latitude", "password")
+                  "city", "country", "state", "longitude", "latitude", "onboardingComplete","password")
         
     def validate(self, attrs):
         password = attrs.get("password")
@@ -90,9 +91,10 @@ class BankDetailSerializer(serializers.ModelSerializer):
 
 
 class ArtisanSerializer(serializers.ModelSerializer):
+    onboardingComplete = serializers.BooleanField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "longitude", "latitude", "role", "password")
+        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "longitude", "latitude", "role", "onboardingComplete", "password")
         
     extra_kwargs = {
             'nin': {'required': False},
@@ -101,6 +103,7 @@ class ArtisanSerializer(serializers.ModelSerializer):
             'document_type': {'required': False},
             'role': {'required': False},
             'state': {'required': False},
+            'onboardingComplete': {'required': False}
         }
 
     def create(self, validated_data):
