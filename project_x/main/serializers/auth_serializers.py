@@ -1,4 +1,4 @@
-from main.models import User, Skill, BankDetails
+from main.models import User, Skill, BankDetails, OnboardingLevel
 from services.models.services_models import Services
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -123,6 +123,12 @@ class ArtisanSerializer(serializers.ModelSerializer):
         return instance
 
 
+class OnboardingLevelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OnboardingLevel
+        fields = ("level_1", "level_2", "level_3")
+
+
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -140,6 +146,8 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Get the user's ID and generate the refresh token
         user_id = self.user.id
         refresh = self.get_token(self.user)
+
+        onboarding_data = self.get_user_onboarding_level(self.user)
         
         # Add custom data to the response
         data.update({
@@ -150,7 +158,15 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             "role": self.user.role,
             "longitude": self.user.longitude,
             "latitude": self.user.latitude,
-            "onboardingComplete": self.user.onboardingComplete
+            "onboardingComplete": self.user.onboardingComplete,
+            "onboarding_level": onboarding_data
         })
         
         return data
+    
+    def get_user_onboarding_level(self, user):
+        try:
+            onboarding = OnboardingLevel.objects.get(user=user)
+        except OnboardingLevel.DoesNotExist:
+            return []
+        return OnboardingLevelSerializer(onboarding).data

@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=BankDetails)
 def mark_onboarding(sender, instance, created, **kwargs):
-    if created and instance.role == "ARTISAN" and not instance.artisan.onboardingComplete:
-        artisan_id = instance.artisan
+    if created and instance.artisan.role == "ARTISAN" and not instance.artisan.onboardingComplete:
+        artisan_id = instance.artisan.id
         user = get_object_or_404(User, id=artisan_id)
         user.onboardingComplete = True
         user.save()
@@ -28,11 +28,13 @@ def mark_onboarding_for_user(sender, instance, created, **kwargs):
 @receiver(post_save, sender=User)
 def mark_onboarding_level_1(sender, instance, created, **kwargs):
     if created and instance.role == "ARTISAN":
-        user = instance
-        onboarding = OnboardingLevel.objects.get(user=user)
-        onboarding.level_1 = True
-        onboarding.save()
-        logger.info(f"Onboarding Level One Check!")
+        # Get or create the OnboardingLevel object for the user
+        onboarding, created = OnboardingLevel.objects.get_or_create(user=instance)
+        
+        if not onboarding.level_1:  # Check if level_1 is not already marked
+            onboarding.level_1 = True
+            onboarding.save(update_fields=['level_1'])
+            logger.info(f"Onboarding Level One marked for user {instance.id}!")
 
 
 @receiver(post_save, sender=Skill)
