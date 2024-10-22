@@ -78,9 +78,6 @@ class User(AbstractUser):
     objects = CustomUserManager()
     
     def save(self, *args, **kwargs):
-        if self.email:
-            self.email = self.email.lower()
-            
         if not self.username:
             random_username = "".join(random.choices(string.ascii_lowercase + string.digits, k=5))
             self.username=random_username
