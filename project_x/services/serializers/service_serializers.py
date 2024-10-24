@@ -33,6 +33,7 @@ class ServiceSerializers(serializers.ModelSerializer):
                     "about_me": skill.description,
                     "price_range": f"{skill.base_charge} - {skill.cap_charge}",
                     "address": skill.artisan.address,
+                    "contact": skill.artisan.contact,
                     "longitude": skill.artisan.longitude,
                     "latitude": skill.artisan.latitude,
                     "services": [service.name for service in skill.services.all()],  # Collect service names in a list
