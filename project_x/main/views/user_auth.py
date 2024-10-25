@@ -8,6 +8,8 @@ from rest_framework import permissions, response, status, serializers
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import NotFound
 from django.db import IntegrityError
+from django.db.models import Count, Q
+from rest_framework.decorators import api_view
 from rest_framework.views import APIView
 from django.core.exceptions import ValidationError
 import re
@@ -149,5 +151,13 @@ class BankDetailViewSet(ViewSet):
     
 
 class RatingViewSet(ModelViewSet):
-    queryset = Rating.objects.select_related("client", "artisan")
+    queryset = Rating.objects.select_related("artisan", "client")
     serializer_class = RatingSerializers
+
+
+@api_view(["GET"])
+def get_my_ratings(request, pk):
+    user = get_object_or_404(User, pk=pk)
+    ratings = Rating.objects.filter(Q(client=user) | Q(artisan=user))
+    serialized_data = RatingSerializers(ratings, many=True)  # Serialize the queryset
+    return response.Response(serialized_data.data)
