@@ -1,6 +1,7 @@
-from main.models import User, Skill, BankDetails
+from main.models import User, Skill, BankDetails, Rating
 from rest_framework.viewsets import ModelViewSet, ViewSet
-from main.serializers.auth_serializers import UserSerializer, ArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer
+from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer,
+                                               BankDetailSerializer, RatingSerializers)
 from main.permissions import IsArtisanPermission
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import permissions, response, status, serializers
@@ -147,3 +148,6 @@ class BankDetailViewSet(ViewSet):
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
 
+class RatingViewSet(ModelViewSet):
+    queryset = Rating.objects.select_related("client", "artisan")
+    serializer_class = RatingSerializers

@@ -1,4 +1,4 @@
-from main.models import User, Skill, BankDetails, OnboardingLevel
+from main.models import User, Skill, BankDetails, OnboardingLevel, Rating
 from services.models.services_models import Services
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -170,3 +170,10 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         except OnboardingLevel.DoesNotExist:
             return []
         return OnboardingLevelSerializer(onboarding).data
+    
+
+class RatingSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Rating
+        fields = ("id", "client", "artisan", "star", "message")
+    

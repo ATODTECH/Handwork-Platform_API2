@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
-from main.views.user_auth import SignUpUserView, SignInUserView, SignUpArtisanViewSet, SkillViewSet, BankDetailViewSet, ResetPassword
+from main.views.user_auth import (SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
+                                  SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet)
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 
 
@@ -14,6 +15,7 @@ router.register("services", ServiceViewSet, basename="service")
 router.register("category", CategoryViewSet, basename='categories')
 router.register("bank_details", BankDetailViewSet, basename='artisan_bank')
 router.register("service", ServiceSearchViewSet, basename='service-search')
+router.register("artisan_rating", RatingViewSet, basename='rating_viewset')
 
 
 urlpatterns = [

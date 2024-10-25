@@ -118,4 +118,18 @@ class OnboardingLevel(models.Model):
     
     def __str__(self):
         return self.user.id
-    
+
+
+class Rating(models.Model):
+    STAR_NO = [(i, i) for i in range(1, 6)]  # Using a 1-5 scale
+
+    client = models.ForeignKey(User, related_name="rated_client", on_delete=models.CASCADE, limit_choices_to={'role': 'USER'})
+    artisan = models.ForeignKey(User, related_name="artisan_rating", on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
+    star = models.IntegerField(choices=STAR_NO, default=1)
+    message = models.TextField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['artisan']),
+            models.Index(fields=['client']),
+        ]
