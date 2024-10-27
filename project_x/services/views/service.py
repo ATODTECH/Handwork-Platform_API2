@@ -16,7 +16,7 @@ from . import (
 
 
 class ServiceViewSet(ModelViewSet):
-    queryset = Services.objects.all()
+    queryset = Services.objects.select_related("client")
     serializer_class = ServiceSerializers
 
 
@@ -29,7 +29,7 @@ class ServiceSearchViewSet(ViewSet):
         if not search_param:
             return response.Response({"detail": "Input Search Parameter"}, status=status.HTTP_400_BAD_REQUEST)
         
-        service = Services.objects.filter(name__icontains=search_param)
+        service = Services.objects.filter(name__icontains=search_param).select_related("client")
         
         if not service.exists():
             return response.Response({"detail": "Parameter provided doesn't match any data on record"}, status=status.HTTP_204_NO_CONTENT)
