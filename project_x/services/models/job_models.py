@@ -1,7 +1,7 @@
 from django.db import models
 from . import User
 
-class JobList(models.Model):
+class BookArtisan(models.Model):
     client = models.ForeignKey(User, on_delete=models.DO_NOTHING, limit_choices_to={'role': 'USER'},related_name='job_owner')
     artisan = models.ForeignKey(User, on_delete=models.DO_NOTHING, limit_choices_to={'role': 'ARTISAN'}, null=True)
     title = models.CharField(max_length=350)

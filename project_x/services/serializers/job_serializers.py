@@ -1,11 +1,11 @@
 from rest_framework import serializers
-from . import JobList
+from . import BookArtisan
 
 
-class JobListSerializers(serializers.ModelSerializer):
+class ArtisanBookingSerializers(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
     updated = serializers.DateTimeField(read_only=True)
 
     class Meta:
-        model = JobList
+        model = BookArtisan
         fields = ('artisan', 'client', 'title', 'description', 'renumeration', 'created_at', 'updated_at', 'isJobTaken')
