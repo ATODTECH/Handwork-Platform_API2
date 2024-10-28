@@ -20,8 +20,8 @@ class BookArtisan(models.Model):
     address = models.CharField(max_length=400, null=True)
     scheduled_date = models.DateField(null=True)
     scheduled_time = models.TimeField(null=True)
-    created_at = models.DateField(default=timezone.now)
-    updated_at = AutoDateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = AutoDateTimeField()
     status = models.CharField(max_length=7, default="Pending")
 
     def __str__(self):

@@ -11,8 +11,7 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
     scheduled_time = serializers.TimeField(format="%H:%M:%S", input_formats=["%H:%M", "%H:%M:%S"])
     class Meta:
         model = BookArtisan
-        fields = (
-            'artisan', 'client', 'services', 'description', 'budget', 'created_at', 
+        fields = ('id', 'artisan', 'client', 'services', 'description', 'budget', 'created_at', 
             'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status',
         )
 
