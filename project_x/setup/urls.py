@@ -4,6 +4,8 @@ from rest_framework import routers
 from main.views.user_auth import (SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
                                   SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, get_my_ratings)
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
+from services.views.job_process import BookArtisanViewSet
+
 
 router = routers.DefaultRouter()
 
@@ -15,6 +17,8 @@ router.register("category", CategoryViewSet, basename='categories')
 router.register("bank_details", BankDetailViewSet, basename='artisan_bank')
 router.register("service", ServiceSearchViewSet, basename='service-search')
 router.register("artisan_rating", RatingViewSet, basename='rating_viewset')
+router.register("book/artisan", BookArtisanViewSet, basename='book-artisan')
+
 
 
 urlpatterns = [
