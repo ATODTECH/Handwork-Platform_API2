@@ -13,11 +13,11 @@ class BookArtisan(models.Model):
     description = models.TextField()
     budget = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     address = models.CharField(max_length=400, null=True)
-    date = models.DateField()
-    time = models.TimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateField(auto_now=True)
+    scheduled_date = models.DateField(null=True)
+    scheduled_time = models.TimeField(null=True)
+    # created_at = models.DateTimeField(auto_now_add=True)
+    # updated_at = models.DateField(auto_now=True)
     status = models.CharField(max_length=7, default="Pending")
 
     def __str__(self):
-        return self.title
+        return self.status
