@@ -133,3 +133,5 @@ class Rating(models.Model):
             models.Index(fields=['artisan']),
             models.Index(fields=['client']),
         ]
+
+

@@ -23,10 +23,10 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         services = Skill.objects.filter(artisan=artisan).select_related("artisan")
 
         # Check if the artisan offers each required service
-        for service in required_services:
-            if not any(service in skilled_services.services.all() for skilled_services in services):
-                raise serializers.ValidationError({"error": f"This Artisan does not perform this service '{service.name}'. "})
-        return attrs
+        # for service in required_services:
+        #     if not any(service in skilled_services.services.all() for skilled_services in services):
+        #         raise serializers.ValidationError({"error": f"This Artisan does not perform this service '{service.name}'. "})
+        # return attrs
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
