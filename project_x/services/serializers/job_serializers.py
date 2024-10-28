@@ -30,5 +30,7 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
+        representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
+        representation['client'] = f"{instance.client.first_name} {instance.client.last_name}"
         representation['services'] = [service.name for service in instance.services.all()]
         return representation
