@@ -15,3 +15,8 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
             'artisan', 'client', 'services', 'description', 'budget', 'created_at', 
             'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status',
         )
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['services'] = [service.name for service in instance.services.all()]
+        return representation

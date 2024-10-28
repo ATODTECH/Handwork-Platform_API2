@@ -1,5 +1,10 @@
 from django.db import models
 from . import User, Services
+from django.utils import timezone
+
+class AutoDateTimeField(models.DateTimeField):
+    def pre_save(self, model_instance, add):
+        return timezone.now()
 
 class BookArtisan(models.Model):
     STATUS = (
@@ -15,8 +20,8 @@ class BookArtisan(models.Model):
     address = models.CharField(max_length=400, null=True)
     scheduled_date = models.DateField(null=True)
     scheduled_time = models.TimeField(null=True)
-    # created_at = models.DateTimeField(auto_now_add=True)
-    # updated_at = models.DateField(auto_now=True)
+    created_at = models.DateField(default=timezone.now)
+    updated_at = AutoDateTimeField(default=timezone.now)
     status = models.CharField(max_length=7, default="Pending")
 
     def __str__(self):
