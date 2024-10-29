@@ -122,7 +122,6 @@ class SkillViewSet(ViewSet):
         serializer = SkillSerializer(skill, many=True)
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
-    # @action(methods=['get'], url_name='skill-retrieve', url_path='skill', detail=True)
     def retrieve(self, request, pk=None):
         # Use get_object_or_404 to handle invalid pk and raise a 404 error if skill doesn't exist
         skill = get_object_or_404(self.get_queryset(), pk=pk)

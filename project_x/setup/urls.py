@@ -4,7 +4,7 @@ from rest_framework import routers
 from main.views.user_auth import (SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
                                   SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, get_my_ratings)
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
-from services.views.job_process import BookArtisanViewSet
+from services.views.job_process import BookArtisanViewSet, get_my_bookings
 
 
 router = routers.DefaultRouter()
@@ -27,5 +27,6 @@ urlpatterns = [
     path("api/reset/password", ResetPassword.as_view(), name='reset-password'),
     path('signin/client', SignInUserView.as_view(), name='token_obtain_pair'),
     path('api/get_services', GetServices.as_view(), name='get_services'),
-    path('api/my_rating/<str:pk>', get_my_ratings, name='ratings')
+    path('api/my_rating/<str:pk>', get_my_ratings, name='ratings'),
+    path('api/my_bookings', get_my_bookings, name='user-bookings')
 ]
