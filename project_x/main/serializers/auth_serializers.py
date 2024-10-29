@@ -136,6 +136,7 @@ class ArtisanSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['skill'] = self.get_artisan_skill(instance)
+        representation['rating'] = self.get_artisan_rating(instance)
         return representation
     
     def get_artisan_skill(self, artisan):
@@ -148,6 +149,14 @@ class ArtisanSerializer(serializers.ModelSerializer):
         
         # Otherwise, return the serialized skill data
         return SkillSerializer(skill).data
+    
+    def get_artisan_rating(self, artisan):
+        rating = Rating.objects.filter(artisan=artisan).select_related('artisan', 'client').first()
+
+        if rating is None:
+            return None
+        
+        return RatingSerializers(rating).data
         
 
 class OnboardingLevelSerializer(serializers.ModelSerializer):
@@ -204,3 +213,8 @@ class RatingSerializers(serializers.ModelSerializer):
         model = Rating
         fields = ("id", "client", "artisan", "star", "message")
     
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['client'] = f"{instance.client.first_name} {instance.client.last_name}"
+        representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
+        return representation
