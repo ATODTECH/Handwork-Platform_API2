@@ -18,7 +18,8 @@ class UserSerializer(serializers.ModelSerializer):
         
     def validate(self, attrs):
         password = attrs.get("password")
-        
+        email = attrs.get("email")
+
         if password:
             # Validate the password using regular expressions
             if not re.match(r'^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*\W).+$', password):
@@ -26,6 +27,10 @@ class UserSerializer(serializers.ModelSerializer):
                     {"error": "Passwords must include at least one special symbol, one number, one lowercase letter, and one uppercase letter."})
             if len(password) <= 5:
                 raise serializers.ValidationError("Passwords must be more than 5 characters.")
+            
+            # Validate Email
+            if User.objects.filter(email=email).exists():
+                raise serializers.ValidationError({"error": "Sorry this email is taken!"})
         return attrs
     
     def validate_email(self, value):
@@ -105,6 +110,12 @@ class ArtisanSerializer(serializers.ModelSerializer):
             'state': {'required': False},
             'onboardingComplete': {'required': False}
         }
+    
+    def validate(self, attrs):
+        email = attrs.get("email")
+        if User.objects.filter(email=email).exists():
+                raise serializers.ValidationError({"error": "Sorry this email is taken!"})
+        return attrs
 
     def create(self, validated_data):
         # Extract password from validated_data
@@ -121,7 +132,23 @@ class ArtisanSerializer(serializers.ModelSerializer):
             instance.set_password(password)
             instance.save()
         return instance
-
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['skill'] = self.get_artisan_skill(instance)
+        return representation
+    
+    def get_artisan_skill(self, artisan):
+        # Try to get the Skill instance
+        skill = Skill.objects.filter(artisan=artisan).select_related('artisan').first()
+        
+        # If no skill found, return None
+        if skill is None:
+            return None
+        
+        # Otherwise, return the serialized skill data
+        return SkillSerializer(skill).data
+        
 
 class OnboardingLevelSerializer(serializers.ModelSerializer):
     class Meta:

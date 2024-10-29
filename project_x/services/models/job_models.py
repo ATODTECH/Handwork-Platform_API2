@@ -22,7 +22,7 @@ class BookArtisan(models.Model):
     scheduled_time = models.TimeField(null=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = AutoDateTimeField()
-    status = models.CharField(max_length=7, default="Pending")
+    status = models.CharField(max_length=8, default="Pending")
 
     def __str__(self):
         return self.status

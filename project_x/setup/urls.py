@@ -10,7 +10,7 @@ from services.views.job_process import BookArtisanViewSet
 router = routers.DefaultRouter()
 
 router.register("user", SignUpUserView, basename='signup-user')
-router.register("artisan", SignUpArtisanViewSet, basename='artisan')
+router.register("artisan", SignUpArtisanViewSet, basename='signup-artisan')
 router.register("skill", SkillViewSet, basename='artisan-skill')
 router.register("services", ServiceViewSet, basename="service")
 router.register("category", CategoryViewSet, basename='categories')

@@ -35,6 +35,13 @@ class SignUpUserView(ModelViewSet):
             return response.Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    # def retrieve(self, request, *args, **kwargs):
+    #     """
+    #     Retrieve a single user by their primary key (pk).
+    #     """
+    #     user = self.get_object()
+    #     serializer = self.get_serializer(user)
+    #     return response.Response(serializer.data, status=status.HTTP_200_OK)
 
 class ResetPassword(APIView):
     def post(self, request):
@@ -68,30 +75,33 @@ class SignInUserView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
 
 
-class SignUpArtisanViewSet(ViewSet):
-    def get_queryset(self):
-        return User.objects.filter(role="ARTISAN")
-    
-    def list(self, request):
-        artisans = self.get_queryset()
-        serializer = ArtisanSerializer(artisans, many=True)
-        return response.Response(serializer.data)
-    
-    def create(self, request):
-        serializer = ArtisanSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return response.Response(serializer.data, status=status.HTTP_201_CREATED)
-        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+class SignUpArtisanViewSet(ModelViewSet):
+    queryset = User.objects.filter(role="ARTISAN")
+    serializer_class = ArtisanSerializer
 
-    @action(detail=True, methods=['put', 'patch'], url_path='get_artisan', url_name='retrieve_artisan')
-    def retrieve_artisan(self, request, pk=None):
-        try:
-            artisan = self.get_queryset().get(id=pk)
-        except User.DoesNotExist:
-            raise NotFound("Artisan not found.")
-        serializer = ArtisanSerializer(artisan)
-        return response.Response(serializer.data, status=status.HTTP_200_OK)
+    # def get_queryset(self):
+    #     return User.objects.filter(role="ARTISAN")
+    
+    # def list(self, request):
+    #     artisans = self.get_queryset()
+    #     serializer = ArtisanSerializer(artisans, many=True)
+    #     return response.Response(serializer.data)
+    
+    # def create(self, request):
+    #     serializer = ArtisanSerializer(data=request.data)
+    #     if serializer.is_valid():
+    #         serializer.save()
+    #         return response.Response(serializer.data, status=status.HTTP_201_CREATED)
+    #     return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # @action(detail=True, methods=['get'], url_path='get_artisan', url_name='retrieve_artisan')
+    # def retrieve_artisan(self, request, pk=None):
+    #     try:
+    #         artisan = self.get_queryset().get(id=pk)
+    #     except User.DoesNotExist:
+    #         raise NotFound("Artisan not found.")
+    #     serializer = ArtisanSerializer(artisan)
+    #     return response.Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class SkillViewSet(ViewSet):
@@ -129,7 +139,6 @@ class AvailableArtisansPerService(ViewSet):
         if pk is None:
             return response.Response({"message": "Service ID required"})
         
-
 
 class BankDetailViewSet(ViewSet):
     permission_classes = [IsArtisanPermission]
