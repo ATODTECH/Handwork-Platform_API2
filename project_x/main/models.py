@@ -117,7 +117,7 @@ class OnboardingLevel(models.Model):
     level_3 = models.BooleanField(default=False)
     
     def __str__(self):
-        return self.user.id
+        return self.user.first_name
 
 
 class Rating(models.Model):
