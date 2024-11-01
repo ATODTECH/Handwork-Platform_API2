@@ -133,12 +133,6 @@ class SkillViewSet(ViewSet):
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
 
-class AvailableArtisansPerService(ViewSet):
-    def list(self, request, pk=None):
-        if pk is None:
-            return response.Response({"message": "Service ID required"})
-        
-
 class BankDetailViewSet(ViewSet):
     permission_classes = [IsArtisanPermission]
     
