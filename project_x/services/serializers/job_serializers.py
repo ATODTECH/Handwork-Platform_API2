@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from . import BookArtisan, Skill
+from . import BookArtisan, Skill, Rating, RatingSerializers
+from django.shortcuts import get_list_or_404
 # from datetime import datetime
 
 
@@ -15,22 +16,19 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
             'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status',
         )
 
-    # def validate(self, attrs):
-    #     artisan = attrs.get('artisan')
-    #     required_services = attrs.get('services')
-
-    #     # Get Artisan Services
-    #     services = Skill.objects.filter(artisan=artisan).select_related("artisan")
-
-    #     # Check if the artisan offers each required service
-    #     # for service in required_services:
-    #     #     if not any(service in skilled_services.services.all() for skilled_services in services):
-    #     #         raise serializers.ValidationError({"error": f"This Artisan does not perform this service '{service.name}'. "})
-    #     # return attrs
-
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
+        representation['artisan_location'] = {"longitude": instance.artisan.longitude, 
+                                      "latitude": instance.artisan.latitude, 
+                                      "address": instance.artisan.address}
         representation['client'] = f"{instance.client.first_name} {instance.client.last_name}"
         representation['services'] = [service.name for service in instance.services.all()]
+        representation['rating'] = self.get_artisan_rating(instance.artisan)
         return representation
+    
+    def get_artisan_rating(self, artisan_id):
+        ratings = Rating.objects.filter(client=artisan_id)
+        if ratings.exists():
+            return RatingSerializers(ratings, many=True).data
+        return None
