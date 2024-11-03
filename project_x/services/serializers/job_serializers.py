@@ -10,6 +10,7 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
 
     scheduled_date = serializers.DateField()
     scheduled_time = serializers.TimeField(format="%H:%M:%S", input_formats=["%H:%M", "%H:%M:%S"])
+    
     class Meta:
         model = BookArtisan
         fields = ('id', 'artisan', 'client', 'services', 'description', 'budget', 'created_at', 
