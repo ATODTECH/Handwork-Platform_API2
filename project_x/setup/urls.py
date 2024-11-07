@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
 from main.views.user_auth import (SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
-                                  SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, get_my_ratings)
+            SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, get_my_ratings)
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import BookArtisanViewSet, get_my_bookings
 

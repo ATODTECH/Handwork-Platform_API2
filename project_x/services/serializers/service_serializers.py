@@ -48,14 +48,16 @@ class ServiceSerializers(serializers.ModelSerializer):
             # Build the artisan data with the average rating included
             artisan_data = {
                 "artisan_id": artisan.id,
-                "artisan": f"{artisan.first_name} {artisan.last_name}",
-                "about_me": skill.description,
-                "price_range": f"{skill.base_charge} - {skill.cap_charge}",
+                "first_name": artisan.first_name,
+                "last_name": artisan.last_name,
+                "description": skill.description,
+                "base_charge": skill.base_charge,
+                "cap_charge": skill.cap_charge,
                 "address": artisan.address,
                 "contact": artisan.contact,
                 "longitude": artisan.longitude,
                 "latitude": artisan.latitude,
-                "services": [service.name for service in skill.services.all()],
+                "services": [{"id": service.id, "name": service.name} for service in skill.services.all()],
                 "workdays": {
                     "weekdays_and_weekends": skill.weekdays_and_weekends,
                     "weekdays_only": skill.weekdays_only,
