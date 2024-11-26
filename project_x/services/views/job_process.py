@@ -27,6 +27,9 @@ def get_my_bookings(request):
 
 
 class MyFilteredBookings(viewsets.ModelViewSet):
-    queryset = BookArtisan.objects.filter(status="Accepted").select_related("client", "artisan").prefetch_related("services")
     serializer_class = ArtisanBookingSerializers
     filter_backends = [DateSearchFilter]
+
+    def get_queryset(self):
+        user = self.request.user
+        return BookArtisan.objects.filter(Q(status="Accepted"), (Q(client=user) | Q(artisan=user))).select_related("client", "artisan").prefetch_related("services")
