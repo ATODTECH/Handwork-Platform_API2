@@ -55,7 +55,7 @@ class User(AbstractUser):
     email = models.EmailField(max_length=254, unique=True)
     password = models.CharField(max_length=128)
     contact = models.CharField(max_length=15, unique=False)
-    profile_image = models.ImageField(null=True)
+    profile_image = models.ImageField(null=True, blank=True)
     gender = models.CharField(max_length=6, choices=GENDER_CHOICES, null=True)
     address = models.TextField(null=True)
     # Artisan Information
@@ -67,8 +67,8 @@ class User(AbstractUser):
     country = models.CharField(max_length=80, null=True)
     nin = models.CharField(max_length=11, null=True)
     bvn = models.CharField(max_length=11, null=True)
-    document = models.FileField(upload_to='onboarding_docs', null=True)
-    document_type = models.CharField(choices=DOCUMENT_TYPE, max_length=16, null=True)
+    document = models.FileField(upload_to='onboarding_docs', null=True, blank=True)
+    document_type = models.CharField(choices=DOCUMENT_TYPE, max_length=16, null=True, blank=True)
     role = models.CharField(max_length=7, choices=ROLE, default="USER")
     onboardingComplete = models.BooleanField(default=False)
 
