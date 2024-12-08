@@ -1,9 +1,10 @@
-from . import BookArtisan, ArtisanBookingSerializers
+from . import BookArtisan, ArtisanBookingSerializers, User
 from rest_framework import viewsets, response, status, filters
 from rest_framework.decorators import api_view
-from django.shortcuts import get_list_or_404
+from django.shortcuts import get_list_or_404, get_object_or_404
 from django.db.models import Q
 from setup.processors.filters import DateSearchFilter
+from django.db import transaction
 
 
 class BookArtisanViewSet(viewsets.ModelViewSet):
@@ -45,3 +46,24 @@ class MyFilteredBookings(viewsets.ModelViewSet):
         user = self.request.user
         booking_id = request.query_params.get("booking_id")
         return BookArtisan.objects.filter(artisan=user, id=booking_id).first()
+    
+
+@api_view(['POST'])
+def toggle_availability(request):
+    user = request.user
+    availability = request.data.get("isAvailable")
+
+    # Ensure the `availability` key is provided
+    if availability is None:
+        return response.Response({"error": "The 'availability' field is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Ensure the value is a boolean
+    if not isinstance(availability, bool):
+        return response.Response({"error": "The 'availability' field must be a boolean (true or false)."}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        artisan = get_object_or_404(User.objects.select_for_update(), id=user.id)
+        artisan.isAvailable = availability
+        artisan.save()
+
+    return response.Response({"message": "Availability toggled successfully!"}, status=status.HTTP_200_OK)

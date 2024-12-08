@@ -97,9 +97,10 @@ class BankDetailSerializer(serializers.ModelSerializer):
 
 class ArtisanSerializer(serializers.ModelSerializer):
     onboardingComplete = serializers.BooleanField(read_only=True)
+    isAvailable = serializers.BooleanField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "longitude", "latitude", "role", "onboardingComplete", "password")
+        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "longitude", "latitude", "role", "onboardingComplete", "password", "isAvailable")
         
     extra_kwargs = {
             'nin': {'required': False},
@@ -108,7 +109,8 @@ class ArtisanSerializer(serializers.ModelSerializer):
             'document_type': {'required': False},
             'role': {'required': False},
             'state': {'required': False},
-            'onboardingComplete': {'required': False}
+            'onboardingComplete': {'required': False},
+            'isAvailable': {'required': False}
         }
     
     def validate(self, attrs):
