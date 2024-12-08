@@ -11,16 +11,18 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
     serializer_class = ArtisanBookingSerializers
 
 
+
 @api_view(['GET'])
 def get_my_bookings(request):
     # Get the current user
     user = request.user
 
     # Retrieve bookings for either artisan or client
-    bookings = get_list_or_404(BookArtisan, Q(artisan=user) | Q(client=user))
-
-    # Serialize the bookings
-    serialized_data = ArtisanBookingSerializers(bookings, many=True).data
+    try:
+        bookings = BookArtisan.objects.filter(artisan=user, client=user).first()
+        serialized_data = ArtisanBookingSerializers(bookings, many=True).data
+    except BookArtisan.DoesNotExist:
+        return None    
     
     # Return the serialized data with a successful response
     return response.Response(serialized_data, status=status.HTTP_200_OK) 
@@ -32,4 +34,14 @@ class MyFilteredBookings(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return BookArtisan.objects.filter(Q(status="Accepted"), (Q(client=user) | Q(artisan=user))).select_related("client", "artisan").prefetch_related("services")
+        try:
+            bookings = BookArtisan.objects.filter(Q(status="Accepted"), (Q(client=user) | Q(artisan=user))).select_related("client", "artisan").prefetch_related("services")
+        except BookArtisan.DoesNotExist:
+            return None
+        
+        return bookings
+    
+    def retrieve(self, request):
+        user = self.request.user
+        booking_id = request.query_params.get("booking_id")
+        return BookArtisan.objects.filter(artisan=user, id=booking_id).first()

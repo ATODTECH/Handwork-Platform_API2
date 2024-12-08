@@ -72,6 +72,8 @@ class User(AbstractUser):
     role = models.CharField(max_length=7, choices=ROLE, default="USER")
     onboardingComplete = models.BooleanField(default=False)
 
+    isAvailable = models.BooleanField(default=True)
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
