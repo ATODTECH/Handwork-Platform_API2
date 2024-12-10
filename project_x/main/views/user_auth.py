@@ -120,6 +120,21 @@ class BankDetailViewSet(ViewSet):
         serializer = BankDetailSerializer(queryset, many=True)
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
+    def update(self, request, pk=None):
+        try:
+            bank_detail = self.get_queryset().get(pk=pk)
+        except BankDetails.DoesNotExist:
+            return response.Response(
+                {"detail": "Bank detail not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        
+        serializer = BankDetailSerializer(bank_detail, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return response.Response(serializer.data, status=status.HTTP_200_OK)
+        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class RatingViewSet(ModelViewSet):
     queryset = Rating.objects.select_related("artisan", "client")
