@@ -3,7 +3,7 @@ from rest_framework import viewsets, response, status, filters
 from rest_framework.decorators import api_view
 from django.shortcuts import get_list_or_404, get_object_or_404
 from django.db.models import Q
-from setup.processors.filters import DateSearchFilter
+from setup.processors.filters import BookingScheduleFilter
 from django.db import transaction
 
 
@@ -31,7 +31,7 @@ def get_my_bookings(request):
 
 class MyFilteredBookings(viewsets.ModelViewSet):
     serializer_class = ArtisanBookingSerializers
-    filter_backends = [DateSearchFilter]
+    filter_backends = [BookingScheduleFilter]
 
     def get_queryset(self):
         user = self.request.user
