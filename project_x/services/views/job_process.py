@@ -36,7 +36,7 @@ class MyFilteredBookings(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         try:
-            bookings = BookArtisan.objects.filter(Q(status="Accepted"), (Q(client=user) | Q(artisan=user))).select_related("client", "artisan").prefetch_related("services")
+            bookings = BookArtisan.objects.filter(Q(status="Pending"), (Q(client=user) | Q(artisan=user))).select_related("client", "artisan").prefetch_related("services")
         except BookArtisan.DoesNotExist:
             return None
         
