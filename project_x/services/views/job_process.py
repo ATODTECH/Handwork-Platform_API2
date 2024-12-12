@@ -20,12 +20,10 @@ def get_my_bookings(request):
 
     # Retrieve bookings for either artisan or client
     try:
-        bookings = BookArtisan.objects.filter(artisan=user, client=user).first()
+        bookings = BookArtisan.objects.filter(Q(client=user) | Q(artisan=user))
         serialized_data = ArtisanBookingSerializers(bookings, many=True).data
     except BookArtisan.DoesNotExist:
         return None    
-    
-    # Return the serialized data with a successful response
     return response.Response(serialized_data, status=status.HTTP_200_OK) 
 
 
