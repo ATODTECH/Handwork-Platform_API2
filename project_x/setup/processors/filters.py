@@ -6,7 +6,7 @@ from rest_framework.exceptions import ValidationError
 
 class BookingScheduleFilter(filters.BaseFilterBackend):
     def filter_queryset(self, request, queryset, view):
-
+        user = request.user
         # Get the date from the query parameters
         schedule = request.query_params.get('schedule', None)
         today = datetime.today()
@@ -14,6 +14,7 @@ class BookingScheduleFilter(filters.BaseFilterBackend):
         if schedule is None or schedule != "today":
             return queryset # Return unfiltered queryset if no date is provided
         
-        date = datetime.today()
+        date = today.date
+        print(date)
 
-        return queryset.filter(scheduled_date=date)
+        return queryset.filter(Q(client=user) | Q(artisan=user), scheduled_date=date)

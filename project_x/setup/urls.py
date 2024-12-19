@@ -4,7 +4,7 @@ from rest_framework import routers
 from main.views.user_auth import (SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
             SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, get_my_ratings)
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
-from services.views.job_process import BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability
+from services.views.job_process import BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings
 
 
 router = routers.DefaultRouter()
@@ -30,5 +30,6 @@ urlpatterns = [
     path('api/get_services', GetServices.as_view(), name='get_services'),
     path('api/my_rating/<str:pk>', get_my_ratings, name='ratings'),
     path('api/my_bookings', get_my_bookings, name='user-bookings'),
-    path('api/toggle_availability', toggle_availability, name="toggle-switch")
+    path('api/toggle_availability', toggle_availability, name="toggle-switch"),
+    path('api/bookings', get_today_bookings, name="today-bookings")
 ]
