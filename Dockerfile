@@ -30,6 +30,6 @@ WORKDIR /app
 COPY . .
 
 # Install dependencies
-RUN pip install --no-cache-dir -r setup/requirements.txt
+RUN pip install --no-cache-dir -r project_x/requirements.txt
 
 CMD ["gunicorn", "-b", "0.0.0.0:8000", "setup.wsgi"]
