@@ -1,17 +1,16 @@
 FROM python:3.10
 
-# Set the working directory inside the container
+# Set working directory inside the container
 WORKDIR /app
 
-# Copy the entire project to the container
-COPY . .
+# Copy the entire project_x folder to /app in the container
+COPY project_x /app
 
-# Install dependencies from the correct location
-RUN pip install --no-cache-dir -r project_x/requirements.txt
+# Install dependencies from project_x/
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Set PYTHONPATH to ensure Django can find the 'setup' module
 ENV PYTHONPATH="/app"
 
-# Start Gunicorn with the correct module
+# Run Gunicorn with the correct import path
 CMD ["gunicorn", "-b", "0.0.0.0:8000", "setup.wsgi"]
-# CMD ["gunicorn", "-b", "0.0.0.0:8000", "project_x.setup.wsgi"]
