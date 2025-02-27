@@ -13,7 +13,7 @@ FROM python:3.10
 WORKDIR /app
 
 # Copy the requirements file from the setup folder
-COPY setup/requirements.txt .
+COPY project_x/requirements.txt .
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
