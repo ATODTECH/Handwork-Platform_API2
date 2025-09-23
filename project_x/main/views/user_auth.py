@@ -1,7 +1,7 @@
-from main.models import User, Skill, BankDetails, Rating
+from main.models import User, Skill, BankDetails, Rating, Notification
 from rest_framework.viewsets import ModelViewSet, ViewSet
 from main.serializers.auth_serializers import (         UserSerializer, ArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer,
-            BankDetailSerializer, RatingSerializers)
+            BankDetailSerializer, RatingSerializers, NotificationSerializer)
 from main.permissions import IsArtisanPermission
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import permissions, response, status, serializers
@@ -14,6 +14,9 @@ from rest_framework.views import APIView
 from django.core.exceptions import ValidationError
 import re
 from django.shortcuts import get_object_or_404
+import logging
+
+logger = logging.getLogger('main')
 
 class SignUpUserView(ModelViewSet):
     queryset = User.objects.all()
@@ -23,49 +26,71 @@ class SignUpUserView(ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             try:
-                # Try saving the user object
                 self.perform_create(serializer)
+                user = User.objects.get(email=serializer.data['email'])
+                Notification.objects.create(
+                    recipient=user,
+                    message=f"Welcome, {user.first_name}! Your account has been created.",
+                    notification_type='SIGNUP'
+                )
+                # Send welcome email
+                send_mail(
+                    subject='Welcome to User Artisan!',
+                    message=f"Hi {user.first_name},\n\nYour account has been created successfully.",
+                    from_email='your.email@gmail.com',
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+                logger.info(f"User created: {serializer.data['email']} (ID: {serializer.data['id']})")
             except IntegrityError as e:
-                # Catch the duplicate email IntegrityError
+                logger.error(f"Failed to create user: {str(e)}")
                 if 'email' in str(e):
                     raise serializers.ValidationError({"email": "This email already exists."})
                 raise serializers.ValidationError({"error": "An error occurred while saving the user."})
-
             headers = self.get_success_headers(serializer.data)
             return response.Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        logger.warning(f"Invalid user signup data: {serializer.errors}")
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class ResetPassword(APIView):
     def post(self, request):
         email = request.data.get('email')
         new_password = request.data.get('new_password')
-
         if not email or not new_password:
+            logger.warning("Password reset failed: Missing email or password")
             return response.Response({"error": "Email and new password are required."}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
+            logger.error(f"Password reset failed: User not found for email {email}")
             return response.Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        # Validate password strength (example: minimum length)
         if len(new_password) < 8:
+            logger.warning(f"Password reset failed for {email}: Password too short")
             raise ValidationError("Password must be at least 8 characters long.")
-        
         if not re.search(r'^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*\W).+$', new_password):
-            raise ValidationError(
-            {"error": "Passwords must include at least one special symbol, one number, one lowercase letter, and one uppercase letter."})
-
+            logger.warning(f"Password reset failed for {email}: Invalid password format")
+            raise ValidationError({"error": "Passwords must include at least one special symbol, one number, one lowercase letter, and one uppercase letter."})
         user.set_password(new_password)
         user.save()
-        
+        Notification.objects.create(
+            recipient=user,
+            message=f"Your password has been successfully reset.",
+            notification_type='PASSWORD_RESET'
+        )
+        logger.info(f"Password reset successful for {email}")
         return response.Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
-
 
 class SignInUserView(TokenObtainPairView):
     permission_classes = (permissions.AllowAny,)
     serializer_class = MyTokenObtainPairSerializer
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            logger.info(f"User signed in: {request.data.get('email')}")
+        else:
+            logger.warning(f"Sign-in failed: {response.data}")
+        return response
 
 
 class SignUpArtisanViewSet(ModelViewSet):
@@ -147,3 +172,44 @@ def get_my_ratings(request, pk):
     ratings = Rating.objects.filter(Q(client=user) | Q(artisan=user))
     serialized_data = RatingSerializers(ratings, many=True)  # Serialize the queryset
     return response.Response(serialized_data.data)
+
+class NotificationViewSet(ModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+    
+    def perform_create(self, serializer):
+        serializer.save(recipient=self.request.user)
+        logger.info(f"Notification created for {self.request.user.email}: {serializer.validated_data['message']}")
+
+    @action(detail=True, methods=['patch'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        """Mark a single notification as read."""
+        try:
+            notification = self.get_queryset().get(pk=pk)
+        except Notification.DoesNotExist:
+            logger.error(f"Notification {pk} not found for user {request.user.email}")
+            return response.Response(
+                {"error": "Notification not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        notification.is_read = True
+        notification.save()
+        logger.info(f"Notification {pk} marked as read for user {request.user.email}")
+        return response.Response(
+            {"message": "Notification marked as read."},
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        """Mark all notifications for the user as read."""
+        updated_count = self.get_queryset().filter(is_read=False).update(is_read=True)
+        logger.info(f"Marked {updated_count} notifications as read for user {request.user.email}")
+        return response.Response(
+            {"message": f"Marked {updated_count} notifications as read."},
+            status=status.HTTP_200_OK
+        )

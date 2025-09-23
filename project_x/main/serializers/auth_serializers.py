@@ -1,4 +1,4 @@
-from main.models import User, Skill, BankDetails, OnboardingLevel, Rating
+from main.models import User, Skill, BankDetails, OnboardingLevel, Rating, Notification
 from services.models.services_models import Services
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -219,4 +219,16 @@ class RatingSerializers(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         representation['client'] = f"{instance.client.first_name} {instance.client.last_name}"
         representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
+        return representation
+    
+class NotificationSerializer(serializers.ModelSerializer):
+    recipient = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    
+    class Meta:
+        model = Notification
+        fields = ('id', 'recipient', 'message', 'notification_type', 'created_at', 'is_read')
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['recipient'] = f"{instance.recipient.first_name} {instance.recipient.last_name}"
         return representation

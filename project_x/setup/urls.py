@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
 from main.views.user_auth import (SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
-            SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, get_my_ratings)
+            SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, NotificationViewSet, get_my_ratings)
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings
 
@@ -19,6 +19,7 @@ router.register("service", ServiceSearchViewSet, basename='service-search')
 router.register("artisan_rating", RatingViewSet, basename='rating_viewset')
 router.register("book/artisan", BookArtisanViewSet, basename='book-artisan')
 router.register("my_bookings/filter", MyFilteredBookings, basename='filtered-bookings')
+router.register("notifications", NotificationViewSet, basename='notifications')
 
 
 
