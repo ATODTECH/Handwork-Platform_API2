@@ -1,11 +1,13 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
-from main.views.user_auth import (SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
-            SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, NotificationViewSet, get_my_ratings)
+from main.views.user_auth import (
+    SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
+    SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, 
+    get_my_ratings, NotificationViewSet, LogsView
+)
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings
-
 
 router = routers.DefaultRouter()
 
@@ -21,8 +23,6 @@ router.register("book/artisan", BookArtisanViewSet, basename='book-artisan')
 router.register("my_bookings/filter", MyFilteredBookings, basename='filtered-bookings')
 router.register("notifications", NotificationViewSet, basename='notifications')
 
-
-
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/", include(router.urls)),
@@ -32,5 +32,6 @@ urlpatterns = [
     path('api/my_rating/<str:pk>', get_my_ratings, name='ratings'),
     path('api/my_bookings', get_my_bookings, name='user-bookings'),
     path('api/toggle_availability', toggle_availability, name="toggle-switch"),
-    path('api/bookings', get_today_bookings, name="today-bookings")
+    path('api/bookings', get_today_bookings, name="today-bookings"),
+    path('api/logs/', LogsView.as_view(), name='logs'),
 ]

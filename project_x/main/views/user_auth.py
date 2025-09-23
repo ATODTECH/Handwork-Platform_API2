@@ -1,24 +1,26 @@
-from main.models import User, Skill, BankDetails, Rating, Notification
+import logging
+import os
+from rest_framework import viewsets, permissions, response, status
 from rest_framework.viewsets import ModelViewSet, ViewSet
-from main.serializers.auth_serializers import (         UserSerializer, ArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer,
-            BankDetailSerializer, RatingSerializers, NotificationSerializer)
+from rest_framework.views import APIView
+from main.models import Notification, User, Skill, BankDetails, Rating
+from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer, RatingSerializers, NotificationSerializer)
 from main.permissions import IsArtisanPermission
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework import permissions, response, status, serializers
+from rest_framework import serializers
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import NotFound
 from django.db import IntegrityError
 from django.db.models import Count, Q
-from rest_framework.decorators import api_view
-from rest_framework.views import APIView
 from django.core.exceptions import ValidationError
 import re
 from django.shortcuts import get_object_or_404
-import logging
+from django.core.mail import send_mail
+from pathlib import Path
 
 logger = logging.getLogger('main')
 
-class SignUpUserView(ModelViewSet):
+class SignUpUserView(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     
@@ -33,7 +35,6 @@ class SignUpUserView(ModelViewSet):
                     message=f"Welcome, {user.first_name}! Your account has been created.",
                     notification_type='SIGNUP'
                 )
-                # Send welcome email
                 send_mail(
                     subject='Welcome to User Artisan!',
                     message=f"Hi {user.first_name},\n\nYour account has been created successfully.",
@@ -77,6 +78,13 @@ class ResetPassword(APIView):
             message=f"Your password has been successfully reset.",
             notification_type='PASSWORD_RESET'
         )
+        send_mail(
+            subject='Password Reset Successful',
+            message=f"Hi {user.first_name},\n\nYour password has been reset successfully.",
+            from_email='your.email@gmail.com',
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
         logger.info(f"Password reset successful for {email}")
         return response.Response({"message": "Password changed successfully."}, status=status.HTTP_200_OK)
 
@@ -92,11 +100,9 @@ class SignInUserView(TokenObtainPairView):
             logger.warning(f"Sign-in failed: {response.data}")
         return response
 
-
-class SignUpArtisanViewSet(ModelViewSet):
+class SignUpArtisanViewSet(viewsets.ModelViewSet):
     queryset = User.objects.filter(role="ARTISAN")
     serializer_class = ArtisanSerializer
-
 
 class SkillViewSet(ViewSet):
     permission_classes = [IsArtisanPermission]
@@ -108,7 +114,9 @@ class SkillViewSet(ViewSet):
         serializer = SkillSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            logger.info(f"Skill created for artisan {request.user.email}")
             return response.Response(serializer.data, status=status.HTTP_201_CREATED)
+        logger.warning(f"Invalid skill data: {serializer.errors}")
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def list(self, request):
@@ -117,15 +125,9 @@ class SkillViewSet(ViewSet):
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
     def retrieve(self, request, pk=None):
-        # Use get_object_or_404 to handle invalid pk and raise a 404 error if skill doesn't exist
         skill = get_object_or_404(self.get_queryset(), pk=pk)
-        
-        # Serialize the object
         serializer = SkillSerializer(skill)
-        
-        # Return the serialized data with a 200 OK status
         return response.Response(serializer.data, status=status.HTTP_200_OK)
-    
 
 class BankDetailViewSet(ViewSet):
     permission_classes = [IsArtisanPermission]
@@ -137,7 +139,9 @@ class BankDetailViewSet(ViewSet):
         serializer = BankDetailSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            logger.info(f"Bank details created for artisan {request.user.email}")
             return response.Response(serializer.data, status=status.HTTP_201_CREATED)
+        logger.warning(f"Invalid bank detail data: {serializer.errors}")
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def list(self, request):
@@ -149,6 +153,7 @@ class BankDetailViewSet(ViewSet):
         try:
             bank_detail = self.get_queryset().get(pk=pk)
         except BankDetails.DoesNotExist:
+            logger.error(f"Bank detail {pk} not found for user {request.user.email}")
             return response.Response(
                 {"detail": "Bank detail not found."},
                 status=status.HTTP_404_NOT_FOUND,
@@ -157,23 +162,25 @@ class BankDetailViewSet(ViewSet):
         serializer = BankDetailSerializer(bank_detail, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            logger.info(f"Bank detail {pk} updated for user {request.user.email}")
             return response.Response(serializer.data, status=status.HTTP_200_OK)
+        logger.warning(f"Invalid bank detail update data: {serializer.errors}")
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-class RatingViewSet(ModelViewSet):
+class RatingViewSet(viewsets.ModelViewSet):
     queryset = Rating.objects.select_related("artisan", "client")
     serializer_class = RatingSerializers
 
+    def perform_create(self, serializer):
+        rating = serializer.save()
+        Notification.objects.create(
+            recipient=rating.artisan,
+            message=f"You received a {rating.star}-star rating from {rating.client.first_name}.",
+            notification_type='RATING'
+        )
+        logger.info(f"Rating created: {rating.star} stars for artisan {rating.artisan.email}")
 
-@api_view(["GET"])
-def get_my_ratings(request, pk):
-    user = get_object_or_404(User, pk=pk)
-    ratings = Rating.objects.filter(Q(client=user) | Q(artisan=user))
-    serialized_data = RatingSerializers(ratings, many=True)  # Serialize the queryset
-    return response.Response(serialized_data.data)
-
-class NotificationViewSet(ModelViewSet):
+class NotificationViewSet(viewsets.ModelViewSet):
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -213,3 +220,36 @@ class NotificationViewSet(ModelViewSet):
             {"message": f"Marked {updated_count} notifications as read."},
             status=status.HTTP_200_OK
         )
+
+class LogsView(APIView):
+    permission_classes = []
+
+    def get(self, request):
+        """Retrieve contents of the log file."""
+        log_file_path = os.path.join(Path(__file__).resolve().parent.parent, '../logs', 'user_artisan.log')
+        try:
+            with open(log_file_path, 'r') as log_file:
+                log_content = log_file.read()
+            return response.Response(
+                {"logs": log_content},
+                status=status.HTTP_200_OK
+            )
+        except FileNotFoundError:
+            logger.error(f"Log file not found at {log_file_path}")
+            return response.Response(
+                {"error": "Log file not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error reading log file: {str(e)}")
+            return response.Response(
+                {"error": f"Error reading log file: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@api_view(["GET"])
+def get_my_ratings(request, pk):
+    user = get_object_or_404(User, pk=pk)
+    ratings = Rating.objects.filter(Q(client=user) | Q(artisan=user))
+    serialized_data = RatingSerializers(ratings, many=True)
+    return response.Response(serialized_data.data)
