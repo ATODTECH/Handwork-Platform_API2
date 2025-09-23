@@ -1,7 +1,7 @@
 .venv
 *.env
 .virtualenv
-logs/
+# logs/
 venv/
 __pycache__/
 *.pyc
