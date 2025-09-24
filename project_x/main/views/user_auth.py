@@ -113,10 +113,15 @@ class SkillViewSet(ViewSet):
     def create(self, request):
         serializer = SkillSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save()
-            logger.info(f"Skill created for artisan {request.user.email}")
+            skill = serializer.save()
+            Notification.objects.create(
+                recipient=request.user,
+                message=f"New skill '{skill.description}' added to your profile.",
+                notification_type='SKILL'
+            )
+            logger.info(f"Skill created for artisan {request.user.email}: {skill.description}")
             return response.Response(serializer.data, status=status.HTTP_201_CREATED)
-        logger.warning(f"Invalid skill data: {serializer.errors}")
+        logger.warning(f"Invalid skill data for artisan {request.user.email}: {serializer.errors}")
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def list(self, request):
@@ -138,10 +143,15 @@ class BankDetailViewSet(ViewSet):
     def create(self, request):
         serializer = BankDetailSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save()
-            logger.info(f"Bank details created for artisan {request.user.email}")
+            bank_detail = serializer.save()
+            Notification.objects.create(
+                recipient=request.user,
+                message=f"Bank details for account '{bank_detail.account_number}' added.",
+                notification_type='BANK_DETAILS'
+            )
+            logger.info(f"Bank details created for artisan {request.user.email}: {bank_detail.account_number}")
             return response.Response(serializer.data, status=status.HTTP_201_CREATED)
-        logger.warning(f"Invalid bank detail data: {serializer.errors}")
+        logger.warning(f"Invalid bank detail data for artisan {request.user.email}: {serializer.errors}")
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def list(self, request):
@@ -161,10 +171,15 @@ class BankDetailViewSet(ViewSet):
         
         serializer = BankDetailSerializer(bank_detail, data=request.data, partial=True, context={'request': request})
         if serializer.is_valid():
-            serializer.save()
-            logger.info(f"Bank detail {pk} updated for user {request.user.email}")
+            bank_detail = serializer.save()
+            Notification.objects.create(
+                recipient=request.user,
+                message=f"Bank details for account '{bank_detail.account_number}' updated.",
+                notification_type='BANK_DETAILS'
+            )
+            logger.info(f"Bank detail {pk} updated for user {request.user.email}: {bank_detail.account_number}")
             return response.Response(serializer.data, status=status.HTTP_200_OK)
-        logger.warning(f"Invalid bank detail update data: {serializer.errors}")
+        logger.warning(f"Invalid bank detail update data for user {request.user.email}: {serializer.errors}")
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class RatingViewSet(viewsets.ModelViewSet):

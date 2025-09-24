@@ -3,5 +3,5 @@
 .virtualenv
 # logs/
 venv/
-__pycache__/
+main/__pycache__/
 *.pyc

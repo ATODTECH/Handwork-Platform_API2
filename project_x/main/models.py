@@ -143,6 +143,9 @@ class Notification(models.Model):
         ('BOOKING', 'Booking'),
         ('RATING', 'Rating'),
         ('PASSWORD_RESET', 'Password Reset'),
+        ('SKILL', 'Skill Added'),
+        ('BANK_DETAILS', 'Bank Details'),
+        ('AVAILABILITY', 'Availability'),
     )
     
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
