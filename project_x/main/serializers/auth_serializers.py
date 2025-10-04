@@ -13,8 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "address", "email", "contact", "gender", "role", 
-                  "city", "country", "state", "longitude", "latitude", "onboardingComplete","password")
+        fields = ('id', 'first_name', 'last_name', 'email', 'contact', 'profile_image', 'gender', 'address', 'state', 'city', 'country', 'longitude', 'latitude', 'role', 'onboardingComplete')
         
     def validate(self, attrs):
         password = attrs.get("password")
