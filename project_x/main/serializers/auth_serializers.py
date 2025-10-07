@@ -99,10 +99,11 @@ class ArtisanSerializer(serializers.ModelSerializer):
     isAvailable = serializers.BooleanField(read_only=True)
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "email", "contact", "state", "city", "nin", "bvn", "document", "address", "document_type", "longitude", "latitude", "role", "onboardingComplete", "password", "isAvailable")
+        fields = ("id", "first_name", "last_name", "email", "contact", 'profile_image', "state", "city", "nin", "bvn", "document", "address", "document_type", "longitude", "latitude", "role", "onboardingComplete", "password", "isAvailable")
         
     extra_kwargs = {
             'nin': {'required': False},
+            'profile_image': {'required': False},
             'bvn': {'required': False},
             'document': {'required': False},
             'document_type': {'required': False},
