@@ -6,6 +6,13 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import get_object_or_404, Http404
 import re
+import logging
+import json
+import ast
+import cloudinary.uploader
+from django.core.validators import FileExtensionValidator
+
+logger = logging.getLogger('main')
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -51,69 +58,140 @@ class UserSerializer(serializers.ModelSerializer):
             instance.save()
         return instance
 
-
 class SkillImageSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(
+        validators=[FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png'])],
+        required=True
+    )
+    
     class Meta:
         model = SkillImage
         fields = ('id', 'image')
 
+    def create(self, validated_data):
+        try:
+            image = validated_data['image']
+            logger.info(f"Uploading image {image.name} to Cloudinary")
+            upload_result = cloudinary.uploader.upload(
+                image,
+                folder="artisan/skill_images",
+                resource_type="image",
+                allowed_formats=['jpg', 'jpeg', 'png']
+            )
+            validated_data['image'] = upload_result['secure_url']
+            instance = super().create(validated_data)
+            logger.info(f"SkillImage created with URL: {instance.image.url}")
+            return instance
+        except Exception as e:
+            logger.error(f"Failed to upload image {image.name} to Cloudinary: {str(e)}")
+            raise serializers.ValidationError({"images": f"Failed to upload image: {str(e)}"})
+
 class SkillSerializer(serializers.ModelSerializer):
     artisan = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
-    services = serializers.PrimaryKeyRelatedField(queryset=Services.objects.all(), many=True)
-    images = SkillImageSerializer(many=True, read_only=True)  # Read-only for output
-    image_files = serializers.ListField(
-        child=serializers.ImageField(), write_only=True, required=False
-    )  # For uploading multiple images
-
+    services = serializers.PrimaryKeyRelatedField(
+        queryset=Services.objects.all(),
+        many=True,
+        write_only=True,
+        required=False
+    )
+    images = SkillImageSerializer(many=True, required=False, read_only=False)
+    
     class Meta:
         model = Skill
         fields = (
-            "id",
-            "artisan",
-            "services",
-            "description",
-            "base_charge",
-            "cap_charge",
-            "weekdays_only",
-            "weekends_only",
-            "weekdays_and_weekends",
-            "images",
-            "image_files",
+            "id", "artisan", "services", "description", "base_charge",
+            "cap_charge", "weekdays_only", "weekends_only",
+            "weekdays_and_weekends", "images"
         )
     
+    def to_internal_value(self, data):
+        services_input = data.get('services', '')
+        logger.info(f"Raw services input: {services_input} (type: {type(services_input)})")
+
+        services = []
+        if services_input:
+            if isinstance(services_input, list):
+                services = services_input
+            else:
+                try:
+                    services = json.loads(services_input)
+                except (json.JSONDecodeError, TypeError):
+                    try:
+                        services = ast.literal_eval(services_input)
+                    except Exception:
+                        raise serializers.ValidationError(
+                            {"services": "Must be a valid array of service IDs, e.g., [1, 2]"}
+                        )
+
+            # Normalize to a flat list of ints
+            if isinstance(services, (int, str)):
+                services = [services]
+            elif not isinstance(services, list):
+                raise serializers.ValidationError({"services": "Must be an array of service IDs"})
+
+            try:
+                services = [int(s) for s in services]
+            except (ValueError, TypeError):
+                raise serializers.ValidationError({"services": "All service IDs must be valid integers"})
+
+        # 🟢 Convert each item to a string so DRF parses it correctly as pk values
+        data = data.copy()
+        data.setlist('services', [str(s) for s in services])  # important
+        logger.info(f"Parsed services for DRF: {data.getlist('services')} (types: {[type(s) for s in data.getlist('services')]})")
+
+        return super().to_internal_value(data)
+    
+    def validate(self, attrs):
+        images = self.context['request'].FILES.getlist('images', [])
+        if images:
+            for image in images:
+                if image.content_type not in ['image/jpeg', 'image/png']:
+                    raise serializers.ValidationError({"images": "Only JPG and PNG files are allowed."})
+        return attrs
+    
     def create(self, validated_data):
-        # Set the artisan to the current user from the request
         artisan = self.context['request'].user
+        services = validated_data.pop('services', [])  # will be list of Services instances
+        images = self.context['request'].FILES.getlist('images', [])
 
-        # Extract services and image_files from validated_data
-        services = validated_data.pop('services')
-        image_files = validated_data.pop('image_files', [])
-
-        # Create the Skill instance without services
         instance = Skill.objects.create(artisan=artisan, **validated_data)
+
+        if services:
+            # services are instances — set them on m2m
+            instance.services.set(services)
+
+        for image in images:
+            SkillImage.objects.create(skill=instance, image=image)
+
+        logger.info(f"Skill created for artisan {artisan.email}: {instance.description} with {len(images)} images")
+        return instance
+
+    
+    def update(self, instance, validated_data):
+        services = validated_data.pop('services', None)
+        images = self.context['request'].FILES.getlist('images', [])
         
-        # Set the many-to-many field for services
-        instance.services.set(services)
-
-        # Create SkillImage instances for each uploaded image
-        for image_file in image_files:
-            SkillImage.objects.create(skill=instance, image=image_file)
-
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        if services is not None:
+            instance.services.set(Services.objects.filter(id__in=services))
+        
+        if images:
+            instance.images.all().delete()  # Optional: Delete existing images
+            for image in images:
+                SkillImage.objects.create(skill=instance, image=image)
+        
+        logger.info(f"Skill updated for artisan {instance.artisan.email}: {instance.description} with {len(images)} images")
         return instance
     
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
         representation['services'] = [{"id": service.id, "name": service.name} for service in instance.services.all()]
-        # Ensure image URLs are absolute
-        request = self.context.get('request')
-        if request:
-            representation['images'] = [
-                {'id': img.id, 'image': request.build_absolute_uri(img.image.url)}
-                for img in instance.images.all()
-            ]
+        representation['images'] = [{"id": image.id, "url": image.image.url} for image in instance.images.all()]
         return representation
-
 
 class BankDetailSerializer(serializers.ModelSerializer):
     artisan =serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)

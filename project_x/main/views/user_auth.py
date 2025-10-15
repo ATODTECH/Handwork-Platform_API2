@@ -17,6 +17,7 @@ import re
 from django.shortcuts import get_object_or_404
 from django.core.mail import send_mail
 from pathlib import Path
+from rest_framework.response import Response
 
 logger = logging.getLogger('main')
 
@@ -104,36 +105,69 @@ class SignUpArtisanViewSet(viewsets.ModelViewSet):
     queryset = User.objects.filter(role="ARTISAN")
     serializer_class = ArtisanSerializer
 
-class SkillViewSet(ViewSet):
+class SkillViewSet(viewsets.ViewSet):
     permission_classes = [IsArtisanPermission]
     
     def get_queryset(self):
-        return Skill.objects.select_related("artisan").prefetch_related("services", "images")
-    
-    def create(self, request):
-        serializer = SkillSerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            skill = serializer.save()
-            Notification.objects.create(
-                recipient=request.user,
-                message=f"New skill '{skill.description}' added to your profile.",
-                notification_type='SKILL'
-            )
-            logger.info(f"Skill created for artisan {request.user.email}: {skill.description}")
-            return response.Response(serializer.data, status=status.HTTP_201_CREATED)
-        logger.warning(f"Invalid skill data for artisan {request.user.email}: {serializer.errors}")
-        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Skill.objects.select_related('artisan').prefetch_related('services', 'images').filter(artisan=self.request.user)
     
     def list(self, request):
-        skill = self.get_queryset()
-        serializer = SkillSerializer(skill, many=True, context={'request': request})
-        return response.Response(serializer.data, status=status.HTTP_200_OK)
+        try:
+            skills = self.get_queryset()
+            serializer = SkillSerializer(skills, many=True)
+            logger.info(f"Skills retrieved for artisan {request.user.email}")
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error retrieving skills for {request.user.email}: {str(e)}")
+            return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def retrieve(self, request, pk=None):
-        skill = get_object_or_404(self.get_queryset(), pk=pk)
-        serializer = SkillSerializer(skill, context={'request': request})
-        return response.Response(serializer.data, status=status.HTTP_200_OK)
-
+        try:
+            skill = get_object_or_404(self.get_queryset(), pk=pk)
+            serializer = SkillSerializer(skill)
+            logger.info(f"Skill {pk} retrieved for artisan {request.user.email}")
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error retrieving skill {pk} for {request.user.email}: {str(e)}")
+            return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def create(self, request):
+        try:
+            serializer = SkillSerializer(data=request.data, context={'request': request})
+            if serializer.is_valid():
+                skill = serializer.save()
+                Notification.objects.create(
+                    recipient=request.user,
+                    message=f"New skill '{skill.description}' added to your profile.",
+                    notification_type='SKILL'
+                )
+                logger.info(f"Skill created for artisan {request.user.email}: {skill.description}")
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            logger.warning(f"Invalid skill data for artisan {request.user.email}: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error creating skill for {request.user.email}: {str(e)}")
+            return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def update(self, request, pk=None):
+        try:
+            skill = get_object_or_404(self.get_queryset(), pk=pk)
+            serializer = SkillSerializer(skill, data=request.data, context={'request': request}, partial=True)
+            if serializer.is_valid():
+                skill = serializer.save()
+                Notification.objects.create(
+                    recipient=request.user,
+                    message=f"Skill '{skill.description}' updated.",
+                    notification_type='SKILL'
+                )
+                logger.info(f"Skill {pk} updated for artisan {request.user.email}")
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            logger.warning(f"Invalid skill update data for artisan {request.user.email}: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error updating skill {pk} for {request.user.email}: {str(e)}")
+            return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 class BankDetailViewSet(ViewSet):
     permission_classes = [IsArtisanPermission]
     

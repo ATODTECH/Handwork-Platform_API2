@@ -115,7 +115,7 @@ class Skill(models.Model):
 
 class SkillImage(models.Model):
     skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name="images")
-    image = models.ImageField(upload_to='skill_images/', storage=MediaCloudinaryStorage())
+    image = models.ImageField(upload_to='skill_images/', null=True, blank=True, storage=MediaCloudinaryStorage())
     
     def __str__(self):
         return f"Image for {self.skill.description[:50]}"

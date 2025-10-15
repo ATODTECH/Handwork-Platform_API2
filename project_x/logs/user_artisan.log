@@ -1,3 +1,13 @@
-ERROR 2025-09-23 10:15:38,848 user_auth Log file not found at C:\Users\FEDGEN\projects\ATOD_API\project_x\main\logs\user_artisan.log
-ERROR 2025-09-23 10:16:58,733 user_auth Log file not found at C:\Users\FEDGEN\projects\ATOD_API\project_x\main\logs\logs/user_artisan.log
-ERROR 2025-09-23 10:17:04,555 user_auth Log file not found at C:\Users\FEDGEN\projects\ATOD_API\project_x\main\logs\logs/user_artisan.log
+INFO 2025-10-15 11:48:44,107 auth_serializers Raw services input: [1] (type: <class 'str'>)
+INFO 2025-10-15 11:48:44,108 auth_serializers Parsed services: [1] (types: [<class 'int'>])
+WARNING 2025-10-15 11:48:44,111 user_auth Invalid skill data for artisan Testartisan@gmail.com: {'services': [ErrorDetail(string='Incorrect type. Expected pk value, received list.', code='incorrect_type')]}
+INFO 2025-10-15 11:51:35,350 auth_serializers Raw services input: [1] (type: <class 'str'>)
+INFO 2025-10-15 11:51:35,351 auth_serializers Parsed services for DRF: ['1'] (types: [<class 'str'>])
+INFO 2025-10-15 11:51:39,746 signals Onboarding Level Two Check!
+INFO 2025-10-15 11:51:41,525 auth_serializers Skill created for artisan Testartisan@gmail.com: I am a Chef with about 3 years of experience, a graduate of Clark Culinary School. I offer Private Chef Services and I'm currently the Head Chef at Bukka Hut with 0 images
+INFO 2025-10-15 11:51:41,971 user_auth Skill created for artisan Testartisan@gmail.com: I am a Chef with about 3 years of experience, a graduate of Clark Culinary School. I offer Private Chef Services and I'm currently the Head Chef at Bukka Hut
+INFO 2025-10-15 12:34:48,619 auth_serializers Raw services input: [1] (type: <class 'str'>)
+INFO 2025-10-15 12:34:48,619 auth_serializers Parsed services for DRF: ['1'] (types: [<class 'str'>])
+INFO 2025-10-15 12:34:51,013 signals Onboarding Level Two Check!
+INFO 2025-10-15 12:34:53,018 auth_serializers Skill created for artisan Testartisan@gmail.com: I am a Chef with about 3 years of experience, a graduate of Clark Culinary School. I offer Private Chef Services and I'm currently the Head Chef at Bukka Hut with 0 images
+INFO 2025-10-15 12:34:53,646 user_auth Skill created for artisan Testartisan@gmail.com: I am a Chef with about 3 years of experience, a graduate of Clark Culinary School. I offer Private Chef Services and I'm currently the Head Chef at Bukka Hut
