@@ -113,6 +113,12 @@ class Skill(models.Model):
     def __str__(self):
         return self.artisan.first_name
 
+class SkillImage(models.Model):
+    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to='skill_images/', storage=MediaCloudinaryStorage())
+    
+    def __str__(self):
+        return f"Image for {self.skill.description[:50]}"
 
 class BankDetails(models.Model):
     artisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})

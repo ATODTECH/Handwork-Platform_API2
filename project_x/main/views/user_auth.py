@@ -108,7 +108,7 @@ class SkillViewSet(ViewSet):
     permission_classes = [IsArtisanPermission]
     
     def get_queryset(self):
-        return Skill.objects.select_related("artisan")
+        return Skill.objects.select_related("artisan").prefetch_related("services", "images")
     
     def create(self, request):
         serializer = SkillSerializer(data=request.data, context={'request': request})
@@ -126,12 +126,12 @@ class SkillViewSet(ViewSet):
     
     def list(self, request):
         skill = self.get_queryset()
-        serializer = SkillSerializer(skill, many=True)
+        serializer = SkillSerializer(skill, many=True, context={'request': request})
         return response.Response(serializer.data, status=status.HTTP_200_OK)
     
     def retrieve(self, request, pk=None):
         skill = get_object_or_404(self.get_queryset(), pk=pk)
-        serializer = SkillSerializer(skill)
+        serializer = SkillSerializer(skill, context={'request': request})
         return response.Response(serializer.data, status=status.HTTP_200_OK)
 
 class BankDetailViewSet(ViewSet):

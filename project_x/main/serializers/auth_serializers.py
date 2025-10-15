@@ -1,4 +1,4 @@
-from main.models import User, Skill, BankDetails, OnboardingLevel, Rating, Notification
+from main.models import User, Skill, BankDetails, OnboardingLevel, Rating, Notification, SkillImage
 from services.models.services_models import Services
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -52,33 +52,67 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class SkillImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SkillImage
+        fields = ('id', 'image')
+
 class SkillSerializer(serializers.ModelSerializer):
-    artisan =serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    artisan = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     services = serializers.PrimaryKeyRelatedField(queryset=Services.objects.all(), many=True)
+    images = SkillImageSerializer(many=True, read_only=True)  # Read-only for output
+    image_files = serializers.ListField(
+        child=serializers.ImageField(), write_only=True, required=False
+    )  # For uploading multiple images
+
     class Meta:
         model = Skill
-        fields = ("id", "artisan", "services", "description", "base_charge", "cap_charge", "weekdays_only", "weekends_only", "weekdays_and_weekends")
+        fields = (
+            "id",
+            "artisan",
+            "services",
+            "description",
+            "base_charge",
+            "cap_charge",
+            "weekdays_only",
+            "weekends_only",
+            "weekdays_and_weekends",
+            "images",
+            "image_files",
+        )
     
     def create(self, validated_data):
         # Set the artisan to the current user from the request
         artisan = self.context['request'].user
 
-        # Extract services from validate_Data since it cannot be assigned directly
+        # Extract services and image_files from validated_data
         services = validated_data.pop('services')
-        
+        image_files = validated_data.pop('image_files', [])
+
         # Create the Skill instance without services
         instance = Skill.objects.create(artisan=artisan, **validated_data)
         
         # Set the many-to-many field for services
         instance.services.set(services)
 
+        # Create SkillImage instances for each uploaded image
+        for image_file in image_files:
+            SkillImage.objects.create(skill=instance, image=image_file)
+
         return instance
     
     def to_representation(self, instance):
-       representation = super().to_representation(instance)
-       representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
-       representation['services'] = [{"id": service.id, "name": service.name} for service in instance.services.all()]
-       return representation
+        representation = super().to_representation(instance)
+        representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
+        representation['services'] = [{"id": service.id, "name": service.name} for service in instance.services.all()]
+        # Ensure image URLs are absolute
+        request = self.context.get('request')
+        if request:
+            representation['images'] = [
+                {'id': img.id, 'image': request.build_absolute_uri(img.image.url)}
+                for img in instance.images.all()
+            ]
+        return representation
 
 
 class BankDetailSerializer(serializers.ModelSerializer):
