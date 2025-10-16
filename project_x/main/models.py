@@ -110,15 +110,31 @@ class Skill(models.Model):
     weekends_only = models.BooleanField(default=False)
     weekdays_and_weekends = models.BooleanField(default=True)
     
+    image1 = models.ImageField(
+        translation.gettext_lazy('skill image 1'),
+        upload_to='skill_images/',
+        null=True,
+        blank=True,
+        storage=MediaCloudinaryStorage()
+    )
+    image2 = models.ImageField(
+        translation.gettext_lazy('skill image 2'),
+        upload_to='skill_images/',
+        null=True,
+        blank=True,
+        storage=MediaCloudinaryStorage()
+    )
+    image3 = models.ImageField(
+        translation.gettext_lazy('skill image 3'),
+        upload_to='skill_images/',
+        null=True,
+        blank=True,
+        storage=MediaCloudinaryStorage()
+    )
+    
     def __str__(self):
         return self.artisan.first_name
 
-class SkillImage(models.Model):
-    skill = models.ForeignKey(Skill, on_delete=models.CASCADE, related_name="images")
-    image = models.ImageField(upload_to='skill_images/', null=True, blank=True, storage=MediaCloudinaryStorage())
-    
-    def __str__(self):
-        return f"Image for {self.skill.description[:50]}"
 
 class BankDetails(models.Model):
     artisan = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})

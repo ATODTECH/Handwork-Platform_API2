@@ -1,4 +1,4 @@
-from main.models import User, Skill, BankDetails, OnboardingLevel, Rating, Notification, SkillImage
+from main.models import User, Skill, BankDetails, OnboardingLevel, Rating, Notification
 from services.models.services_models import Services
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -58,50 +58,20 @@ class UserSerializer(serializers.ModelSerializer):
             instance.save()
         return instance
 
-class SkillImageSerializer(serializers.ModelSerializer):
-    image = serializers.ImageField(
-        validators=[FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png'])],
-        required=True
-    )
-    
-    class Meta:
-        model = SkillImage
-        fields = ('id', 'image')
-
-    def create(self, validated_data):
-        try:
-            image = validated_data['image']
-            logger.info(f"Uploading image {image.name} to Cloudinary")
-            upload_result = cloudinary.uploader.upload(
-                image,
-                folder="artisan/skill_images",
-                resource_type="image",
-                allowed_formats=['jpg', 'jpeg', 'png']
-            )
-            validated_data['image'] = upload_result['secure_url']
-            instance = super().create(validated_data)
-            logger.info(f"SkillImage created with URL: {instance.image.url}")
-            return instance
-        except Exception as e:
-            logger.error(f"Failed to upload image {image.name} to Cloudinary: {str(e)}")
-            raise serializers.ValidationError({"images": f"Failed to upload image: {str(e)}"})
-
 class SkillSerializer(serializers.ModelSerializer):
-    artisan = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    artisan =serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     services = serializers.PrimaryKeyRelatedField(
         queryset=Services.objects.all(),
         many=True,
         write_only=True,
         required=False
     )
-    images = SkillImageSerializer(many=True, required=False, read_only=False)
-    
     class Meta:
         model = Skill
         fields = (
-            "id", "artisan", "services", "description", "base_charge",
-            "cap_charge", "weekdays_only", "weekends_only",
-            "weekdays_and_weekends", "images"
+            "id", "artisan", "services", "description", "base_charge", 
+            "cap_charge", "weekdays_only", "weekends_only", "weekdays_and_weekends",
+            "image1", "image2", "image3"
         )
     
     def to_internal_value(self, data):
@@ -141,57 +111,33 @@ class SkillSerializer(serializers.ModelSerializer):
 
         return super().to_internal_value(data)
     
-    def validate(self, attrs):
-        images = self.context['request'].FILES.getlist('images', [])
-        if images:
-            for image in images:
-                if image.content_type not in ['image/jpeg', 'image/png']:
-                    raise serializers.ValidationError({"images": "Only JPG and PNG files are allowed."})
-        return attrs
-    
     def create(self, validated_data):
+        # Set the artisan to the current user from the request
         artisan = self.context['request'].user
-        services = validated_data.pop('services', [])  # will be list of Services instances
-        images = self.context['request'].FILES.getlist('images', [])
 
+        # Extract services from validate_Data since it cannot be assigned directly
+        services = validated_data.pop('services')
+        
+        # Create the Skill instance without services
         instance = Skill.objects.create(artisan=artisan, **validated_data)
-
-        if services:
-            # services are instances — set them on m2m
-            instance.services.set(services)
-
-        for image in images:
-            SkillImage.objects.create(skill=instance, image=image)
-
-        logger.info(f"Skill created for artisan {artisan.email}: {instance.description} with {len(images)} images")
-        return instance
-
-    
-    def update(self, instance, validated_data):
-        services = validated_data.pop('services', None)
-        images = self.context['request'].FILES.getlist('images', [])
         
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        
-        if services is not None:
-            instance.services.set(Services.objects.filter(id__in=services))
-        
-        if images:
-            instance.images.all().delete()  # Optional: Delete existing images
-            for image in images:
-                SkillImage.objects.create(skill=instance, image=image)
-        
-        logger.info(f"Skill updated for artisan {instance.artisan.email}: {instance.description} with {len(images)} images")
+        # Set the many-to-many field for services
+        instance.services.set(services)
+
         return instance
     
     def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
-        representation['services'] = [{"id": service.id, "name": service.name} for service in instance.services.all()]
-        representation['images'] = [{"id": image.id, "url": image.image.url} for image in instance.images.all()]
-        return representation
+       representation = super().to_representation(instance)
+       representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
+       representation['services'] = [{"id": service.id, "name": service.name} for service in instance.services.all()]
+       representation['images'] = [
+           {"url": instance.image1.url} if instance.image1 else None,
+           {"url": instance.image2.url} if instance.image2 else None,
+           {"url": instance.image3.url} if instance.image3 else None,
+       ]
+       # Filter out None values for cleaner output
+       representation['images'] = [img for img in representation['images'] if img is not None]
+       return representation
 
 class BankDetailSerializer(serializers.ModelSerializer):
     artisan =serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
