@@ -1,20 +1,41 @@
 from . import BookArtisan, ArtisanBookingSerializers, User
+from services.models.job_models import MaterialQuote
+from services.serializers.job_serializers import MaterialQuoteSerializer
 from rest_framework import viewsets, response, status, filters
 from rest_framework.decorators import api_view
 from django.shortcuts import get_list_or_404, get_object_or_404
 from django.db.models import Q
 from setup.processors.filters import BookingScheduleFilter
+from django.conf import settings
 from django.db import transaction
-from datetime import datetime
+from datetime import datetime, timezone
 from rest_framework.response import Response
 from main.models import Notification
 import logging
+import paystack
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import action, permission_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.http import HttpResponse
+import json
+import hmac
+import hashlib
 
 logger = logging.getLogger('services')
+
+paystack.api_key = settings.PAYSTACK_SECRET_KEY
 
 class BookArtisanViewSet(viewsets.ModelViewSet):
     queryset = BookArtisan.objects.select_related('client', 'artisan').prefetch_related('services')
     serializer_class = ArtisanBookingSerializers
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'ARTISAN':
+            return BookArtisan.objects.filter(artisan=user)
+        elif user.role == 'USER':
+            return BookArtisan.objects.filter(client=user)
+        return BookArtisan.objects.none()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -39,33 +60,61 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
         return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, *args, **kwargs):
-        try:
-            booking = self.get_object()
-        except BookArtisan.DoesNotExist:
-            logger.error(f"Booking {kwargs.get('pk')} not found for user {request.user.email}")
-            return response.Response({"detail": "Booking not found."}, status=status.HTTP_404_NOT_FOUND)
-        
+        booking = self.get_object()
+
+        # Only artisan can update status
+        if request.user != booking.artisan:
+            return response.Response(
+                {"detail": "Only the artisan can update job status."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        allowed_fields = {'status', 'agreed_amount'}
+        if not set(request.data.keys()).issubset(allowed_fields):
+            return response.Response(
+                {"detail": "Invalid fields."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_status = booking.status
         serializer = self.get_serializer(booking, data=request.data, partial=True)
-        if serializer.is_valid():
-            booking = serializer.save()
-            # Notify based on status change
-            if booking.status == "Accepted":
-                Notification.objects.create(
-                    recipient=booking.client,
-                    message=f"Your booking for {', '.join(service.name for service in booking.services.all())} has been accepted by {booking.artisan.first_name} {booking.artisan.last_name}.",
-                    notification_type='BOOKING'
+        if not serializer.is_valid():
+            return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_booking = serializer.save()
+
+        new_status = updated_booking.status
+
+        if new_status == "Accepted" and old_status == "Pending":
+            if not updated_booking.agreed_amount:
+                return response.Response(
+                    {"detail": "agreed_amount is required when accepting."},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
-                logger.info(f"Booking {booking.id} accepted by artisan {booking.artisan.email}")
-            elif booking.status == "Declined":
-                Notification.objects.create(
-                    recipient=booking.client,
-                    message=f"Your booking for {', '.join(service.name for service in booking.services.all())} was declined by {booking.artisan.first_name} {booking.artisan.last_name}.",
-                    notification_type='BOOKING'
-                )
-                logger.info(f"Booking {booking.id} declined by artisan {booking.artisan.email}")
-            return response.Response(serializer.data, status=status.HTTP_200_OK)
-        logger.warning(f"Invalid booking update data: {serializer.errors}")
-        return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            Notification.objects.create(
+                recipient=updated_booking.client,
+                message=f"Your booking has been accepted by {booking.artisan.first_name}. "
+                        f"Total: ₦{updated_booking.agreed_amount:,}. "
+                        f"Please pay deposit of ₦{updated_booking.deposit_amount:,} to proceed.",
+                notification_type='PAYMENT'
+            )
+
+        elif new_status == "In Progress" and old_status == "Deposit Paid":
+            Notification.objects.create(
+                recipient=updated_booking.client,
+                message=f"The artisan has started working on your job.",
+                notification_type='BOOKING'
+            )
+
+        elif new_status == "Completed" and old_status == "In Progress":
+            Notification.objects.create(
+                recipient=updated_booking.client,
+                message=f"The job has been marked as completed by the artisan. "
+                        f"Please pay the balance of ₦{updated_booking.balance_amount:,} to release funds.",
+                notification_type='PAYMENT'
+            )
+
+        return response.Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 def get_my_bookings(request):
@@ -207,3 +256,175 @@ def get_today_bookings(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+    
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pay_deposit(request, pk):
+    booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
+
+    if booking.status != "Accepted":
+        return Response({"detail": "Booking must be accepted before paying deposit."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not booking.agreed_amount or booking.agreed_amount <= 0:
+        return Response({"detail": "Agreed amount not set."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if booking.deposit_amount is None or booking.deposit_amount <= 0:
+        return Response({"detail": "Deposit amount not calculated."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Generate unique reference
+    reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
+
+    try:
+        response = paystack.transaction.initialize(
+            reference=reference,
+            amount=int(booking.deposit_amount * 100),  # Paystack uses kobo
+            email=request.user.email,
+            callback_url="https://frontend.com/payment-callback", 
+            metadata={
+                "booking_id": booking.id,
+                "payment_type": "deposit",
+                "user_id": request.user.id
+            }
+        )
+
+        return Response({
+            "authorization_url": response['data']['authorization_url'],
+            "reference": response['data']['reference'],
+            "amount": booking.deposit_amount
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pay_balance(request, pk):
+    booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
+
+    if booking.status != "Completed":
+        return Response({"detail": "Job must be marked as completed before paying balance."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if booking.balance_amount is None or booking.balance_amount <= 0:
+        return Response({"detail": "No balance due."}, status=status.HTTP_400_BAD_REQUEST)
+
+    reference = f"balance_{booking.id}_{int(timezone.now().timestamp())}"
+
+    try:
+        response = paystack.transaction.initialize(
+            reference=reference,
+            amount=int(booking.balance_amount * 100),
+            email=request.user.email,
+            callback_url="https://frontend.com/payment-success",
+            metadata={
+                "booking_id": booking.id,
+                "payment_type": "balance",
+                "user_id": request.user.id
+            }
+        )
+
+        return Response({
+            "authorization_url": response['data']['authorization_url'],
+            "reference": response['data']['reference'],
+            "amount": booking.balance_amount
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def paystack_webhook(request):
+    # Verify webhook signature (highly recommended)
+    signature = request.headers.get('x-paystack-signature')
+    if settings.PAYSTACK_WEBHOOK_SECRET:
+        computed_hmac = hmac.new(
+            settings.PAYSTACK_SECRET_KEY.encode(),
+            request.body,
+            hashlib.sha512
+        ).hexdigest()
+        if not hmac.compare_digest(computed_hmac, signature or ''):
+            return HttpResponse(status=400)
+
+    payload = json.loads(request.body)
+    event = payload.get('event')
+
+    if event == 'charge.success':
+        data = payload['data']
+        reference = data['reference']
+        metadata = data.get('metadata', {})
+        booking_id = metadata.get('booking_id')
+        payment_type = metadata.get('payment_type')
+
+        try:
+            booking = BookArtisan.objects.get(id=booking_id)
+        except BookArtisan.DoesNotExist:
+            return HttpResponse(status=200)
+
+        # Prevent double processing
+        if payment_type == "deposit" and booking.status == "Accepted":
+            booking.status = "Deposit Paid"
+            booking.deposit_paid_at = timezone.now()
+            booking.save()
+
+            Notification.objects.create(
+                recipient=booking.artisan,
+                message=f"Client has paid ₦{booking.deposit_amount:,} deposit. You can now start the job!",
+                notification_type='PAYMENT'
+            )
+            Notification.objects.create(
+                recipient=booking.client,
+                message="Deposit payment successful! The artisan will begin work soon.",
+                notification_type='PAYMENT'
+            )
+
+        elif payment_type == "balance" and booking.status == "Completed":
+            booking.status = "Paid in Full"
+            booking.fully_paid_at = timezone.now()
+            booking.save()
+
+            Notification.objects.create(
+                recipient=booking.artisan,
+                message=f"Final payment of ₦{booking.balance_amount:,} received. Funds released!",
+                notification_type='PAYMENT'
+            )
+            Notification.objects.create(
+                recipient=booking.client,
+                message="Balance payment successful. Thank you!",
+                notification_type='PAYMENT'
+            )
+
+    return HttpResponse(status=200)
+
+class MaterialQuoteViewSet(viewsets.ModelViewSet):
+    queryset = MaterialQuote.objects.all()
+    serializer_class = MaterialQuoteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'ARTISAN':
+            return MaterialQuote.objects.filter(artisan=user)
+        # Optionally allow admin/company to see all
+        elif user.is_staff or user.role == 'ADMIN': 
+            return MaterialQuote.objects.all()
+        return MaterialQuote.objects.none()
+
+    def perform_create(self, serializer):
+        quote = serializer.save(artisan=self.request.user)
+
+        # Notify client
+        Notification.objects.create(
+            recipient=quote.booking.client,
+            message=f"The artisan has requested ₦{quote.total_cost:,} for materials on your job: {quote.job_title}.",
+            notification_type='MATERIAL_REQUEST'
+        )
+
+    @action(detail=True, methods=['get'], url_path='my-requests')
+    def my_requests(self, request, booking_id=None):
+        """Extra endpoint: Get all material requests for a specific booking (useful for client)"""
+        quotes = MaterialQuote.objects.filter(booking_id=booking_id)
+        serializer = self.get_serializer(quotes, many=True)
+        return Response(serializer.data)

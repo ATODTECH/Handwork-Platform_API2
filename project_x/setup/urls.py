@@ -7,7 +7,7 @@ from main.views.user_auth import (
     get_my_ratings, NotificationViewSet, LogsView
 )
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
-from services.views.job_process import BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings
+from services.views.job_process import BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet
 
 router = routers.DefaultRouter()
 
@@ -22,6 +22,7 @@ router.register("artisan_rating", RatingViewSet, basename='rating_viewset')
 router.register("book/artisan", BookArtisanViewSet, basename='book-artisan')
 router.register("my_bookings/filter", MyFilteredBookings, basename='filtered-bookings')
 router.register("notifications", NotificationViewSet, basename='notifications')
+router.register("material_quotes", MaterialQuoteViewSet, basename='material-quote')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -34,4 +35,8 @@ urlpatterns = [
     path('api/toggle_availability', toggle_availability, name="toggle-switch"),
     path('api/bookings', get_today_bookings, name="today-bookings"),
     path('api/logs/', LogsView.as_view(), name='logs'),
+
+    path('api/book/<int:pk>/pay-deposit/', pay_deposit, name='pay-deposit'),
+    path('api/book/<int:pk>/pay-balance/', pay_balance, name='pay-balance'),
+    path('api/paystack/webhook/', paystack_webhook, name='paystack-webhook'),
 ]
