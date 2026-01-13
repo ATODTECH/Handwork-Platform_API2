@@ -36,7 +36,7 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         return None
     
 class MaterialQuoteSerializer(serializers.ModelSerializer):
-    artisan = serializers.StringField(source='artisan.get_full_name', read_only=True)
+    artisan = serializers.ReadOnlyField(source='artisan.get_full_name', read_only=True)
     booking_id = serializers.IntegerField(source='booking.id', read_only=True)
     status = serializers.CharField(read_only=True)
     requested_at = serializers.DateTimeField(read_only=True)
