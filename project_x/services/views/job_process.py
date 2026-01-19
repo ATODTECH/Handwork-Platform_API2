@@ -14,7 +14,7 @@ from decimal import Decimal
 from rest_framework.response import Response
 from main.models import Notification
 import logging
-import paystack
+from paystackapi.paystack import Paystack
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import action, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -25,7 +25,7 @@ import hashlib
 
 logger = logging.getLogger('services')
 
-paystack.api_key = settings.PAYSTACK_SECRET_KEY
+paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
 class BookArtisanViewSet(viewsets.ModelViewSet):
     queryset = BookArtisan.objects.select_related('client', 'artisan').prefetch_related('services')
@@ -264,99 +264,74 @@ def get_today_bookings(request):
 def pay_deposit(request, pk):
     logger.info("🔥 pay_deposit HIT")
 
+    booking = get_object_or_404(
+        BookArtisan,
+        id=pk,
+        client=request.user
+    )
+
+    if booking.status != "Accepted":
+        return Response(
+            {"detail": "Booking must be accepted before paying deposit."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if booking.agreed_amount is None or booking.agreed_amount <= 0:
+        return Response(
+            {"detail": "Agreed amount has not been set for this booking."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
+
     try:
-        booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
-
-        if booking.status != "Accepted":
-            return Response(
-                {"detail": "Booking must be accepted before paying deposit."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if not booking.deposit_amount or booking.deposit_amount <= 0:
-            return Response(
-                {"detail": "Invalid deposit amount."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
-
         response = paystack.transaction.initialize(
             reference=reference,
-            amount=int(booking.deposit_amount * Decimal("100")),
+            amount=int(booking.agreed_amount * 100),
             email=request.user.email,
+            callback_url="https://frontend.com/payment-success",
             metadata={
                 "booking_id": booking.id,
                 "payment_type": "deposit",
-                "user_id": request.user.id
+                "user_id": str(request.user.id)
             }
         )
 
-        data = response.data
+        data = response["data"]
 
         return Response({
             "authorization_url": data["authorization_url"],
             "reference": data["reference"],
             "amount": booking.deposit_amount
-        }, status=status.HTTP_200_OK)
+        })
 
     except Exception as e:
         logger.exception("❌ Deposit payment failed")
         return Response(
-            {"detail": str(e)},
+            {"detail": "Unable to initialize deposit payment."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated])
-# def pay_deposit(request, pk):
-#     booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
-
-#     if booking.status != "Accepted":
-#         return Response({"detail": "Booking must be accepted before paying deposit."}, status=status.HTTP_400_BAD_REQUEST)
-
-#     if not booking.agreed_amount or booking.agreed_amount <= 0:
-#         return Response({"detail": "Agreed amount not set."}, status=status.HTTP_400_BAD_REQUEST)
-
-#     if booking.deposit_amount is None or booking.deposit_amount <= 0:
-#         return Response({"detail": "Deposit amount not calculated."}, status=status.HTTP_400_BAD_REQUEST)
-
-#     # Generate unique reference
-#     reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
-
-#     try:
-#         response = paystack.transaction.initialize(
-#             reference=reference,
-#             amount=int(booking.deposit_amount * 100),  # Paystack uses kobo
-#             email=request.user.email,
-#             callback_url="https://frontend.com/payment-callback", 
-#             metadata={
-#                 "booking_id": booking.id,
-#                 "payment_type": "deposit",
-#                 "user_id": request.user.id
-#             }
-#         )
-
-#         return Response({
-#             "authorization_url": response['data']['authorization_url'],
-#             "reference": response['data']['reference'],
-#             "amount": booking.deposit_amount
-#         }, status=status.HTTP_200_OK)
-
-#     except Exception as e:
-#         return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def pay_balance(request, pk):
-    booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
+    booking = get_object_or_404(
+        BookArtisan,
+        id=pk,
+        client=request.user
+    )
 
     if booking.status != "Completed":
-        return Response({"detail": "Job must be marked as completed before paying balance."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Job must be marked as completed before paying balance."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-    if booking.balance_amount is None or booking.balance_amount <= 0:
-        return Response({"detail": "No balance due."}, status=status.HTTP_400_BAD_REQUEST)
+    if not booking.balance_amount or booking.balance_amount <= 0:
+        return Response(
+            {"detail": "No balance due."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     reference = f"balance_{booking.id}_{int(timezone.now().timestamp())}"
 
@@ -374,13 +349,16 @@ def pay_balance(request, pk):
         )
 
         return Response({
-            "authorization_url": response['data']['authorization_url'],
-            "reference": response['data']['reference'],
+            "authorization_url": response["data"]["authorization_url"],
+            "reference": response["data"]["reference"],
             "amount": booking.balance_amount
-        }, status=status.HTTP_200_OK)
+        })
 
     except Exception as e:
-        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @csrf_exempt
