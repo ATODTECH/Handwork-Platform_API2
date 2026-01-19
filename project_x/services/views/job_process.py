@@ -8,7 +8,9 @@ from django.db.models import Q
 from setup.processors.filters import BookingScheduleFilter
 from django.conf import settings
 from django.db import transaction
-from datetime import datetime, timezone
+from datetime import datetime
+from django.utils import timezone
+from decimal import Decimal
 from rest_framework.response import Response
 from main.models import Notification
 import logging
@@ -260,26 +262,29 @@ def get_today_bookings(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def pay_deposit(request, pk):
-    booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
-
-    if booking.status != "Accepted":
-        return Response({"detail": "Booking must be accepted before paying deposit."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if not booking.agreed_amount or booking.agreed_amount <= 0:
-        return Response({"detail": "Agreed amount not set."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if booking.deposit_amount is None or booking.deposit_amount <= 0:
-        return Response({"detail": "Deposit amount not calculated."}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Generate unique reference
-    reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
+    logger.info("🔥 pay_deposit HIT")
 
     try:
+        booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
+
+        if booking.status != "Accepted":
+            return Response(
+                {"detail": "Booking must be accepted before paying deposit."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not booking.deposit_amount or booking.deposit_amount <= 0:
+            return Response(
+                {"detail": "Invalid deposit amount."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
+
         response = paystack.transaction.initialize(
             reference=reference,
-            amount=int(booking.deposit_amount * 100),  # Paystack uses kobo
+            amount=int(booking.deposit_amount * Decimal("100")),
             email=request.user.email,
-            callback_url="https://frontend.com/payment-callback", 
             metadata={
                 "booking_id": booking.id,
                 "payment_type": "deposit",
@@ -287,14 +292,59 @@ def pay_deposit(request, pk):
             }
         )
 
+        data = response.data
+
         return Response({
-            "authorization_url": response['data']['authorization_url'],
-            "reference": response['data']['reference'],
+            "authorization_url": data["authorization_url"],
+            "reference": data["reference"],
             "amount": booking.deposit_amount
         }, status=status.HTTP_200_OK)
 
     except Exception as e:
-        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        logger.exception("❌ Deposit payment failed")
+        return Response(
+            {"detail": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# def pay_deposit(request, pk):
+#     booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
+
+#     if booking.status != "Accepted":
+#         return Response({"detail": "Booking must be accepted before paying deposit."}, status=status.HTTP_400_BAD_REQUEST)
+
+#     if not booking.agreed_amount or booking.agreed_amount <= 0:
+#         return Response({"detail": "Agreed amount not set."}, status=status.HTTP_400_BAD_REQUEST)
+
+#     if booking.deposit_amount is None or booking.deposit_amount <= 0:
+#         return Response({"detail": "Deposit amount not calculated."}, status=status.HTTP_400_BAD_REQUEST)
+
+#     # Generate unique reference
+#     reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
+
+#     try:
+#         response = paystack.transaction.initialize(
+#             reference=reference,
+#             amount=int(booking.deposit_amount * 100),  # Paystack uses kobo
+#             email=request.user.email,
+#             callback_url="https://frontend.com/payment-callback", 
+#             metadata={
+#                 "booking_id": booking.id,
+#                 "payment_type": "deposit",
+#                 "user_id": request.user.id
+#             }
+#         )
+
+#         return Response({
+#             "authorization_url": response['data']['authorization_url'],
+#             "reference": response['data']['reference'],
+#             "amount": booking.deposit_amount
+#         }, status=status.HTTP_200_OK)
+
+#     except Exception as e:
+#         return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])

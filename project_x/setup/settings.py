@@ -139,8 +139,8 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-PAYSTACK_SECRET_KEY = "sk_test_your_secret_key_here" 
-PAYSTACK_PUBLIC_KEY = "pk_test_your_public_key_here"
+PAYSTACK_SECRET_KEY = "sk_test_bc5525682c1c38c7af15b6179297251937e6fcbc" 
+PAYSTACK_PUBLIC_KEY = "pk_test_bc5525682c1c38c7af15b6179297251937e6fcbc"
 
 CORS_ALLOW_HEADERS = [
     'accept',
