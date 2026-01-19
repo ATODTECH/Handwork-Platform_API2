@@ -289,7 +289,7 @@ def pay_deposit(request, pk):
             reference=reference,
             amount=int(booking.agreed_amount * 100),
             email=request.user.email,
-            callback_url="https://frontend.com/payment-success",
+            callback_url="https://atodapi.up.railway.app/api/paystack/webhook/",
             metadata={
                 "booking_id": booking.id,
                 "payment_type": "deposit",
