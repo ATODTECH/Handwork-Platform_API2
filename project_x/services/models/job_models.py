@@ -1,5 +1,6 @@
 from django.db import models
 from . import User, Services
+from decimal import Decimal
 from django.utils import timezone
 
 class AutoDateTimeField(models.DateTimeField):
@@ -43,22 +44,18 @@ class BookArtisan(models.Model):
     scheduled_time = models.TimeField(null=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = AutoDateTimeField()
-    status = models.CharField(max_length=8, default="Pending")
+    status = models.CharField(max_length=30, default="Pending")
 
     def __str__(self):
         return self.status
     
-    DEPOSIT_PERCENTAGE = 70
+    DEPOSIT_PERCENTAGE = Decimal('70')
 
     def save(self, *args, **kwargs):
         if self.agreed_amount and self.agreed_amount > 0:
-            # Use agreed_amount as total
-            self.deposit_amount = self.agreed_amount * (self.DEPOSIT_PERCENTAGE / 100)
-            self.balance_amount = self.agreed_amount - self.deposit_amount
-        elif self.budget > 0:  # Fallback if no agreed_amount (rare)
-            self.deposit_amount = self.budget * (self.DEPOSIT_PERCENTAGE / 100)
-            self.balance_amount = self.budget - self.deposit_amount
-
+            percentage = self.DEPOSIT_PERCENTAGE / Decimal('100')
+            self.deposit_amount = (self.agreed_amount * percentage).quantize(Decimal('0.01'))
+            self.balance_amount = (self.agreed_amount - self.deposit_amount).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
 
 class MaterialQuote(models.Model):

@@ -13,7 +13,7 @@ from django.utils import timezone
 from decimal import Decimal
 from rest_framework.response import Response
 from main.models import Notification
-import logging
+import logging, requests
 from paystackapi.paystack import Paystack
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import action, permission_classes
@@ -258,17 +258,13 @@ def get_today_bookings(request):
             {"error": f"An unexpected error occurred: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def pay_deposit(request, pk):
-    logger.info("🔥 pay_deposit HIT")
+    logger.info("pay_deposit HIT")
 
-    booking = get_object_or_404(
-        BookArtisan,
-        id=pk,
-        client=request.user
-    )
+    booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
 
     if booking.status != "Accepted":
         return Response(
@@ -276,20 +272,30 @@ def pay_deposit(request, pk):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    if booking.agreed_amount is None or booking.agreed_amount <= 0:
+    if not booking.agreed_amount or booking.agreed_amount <= 0:
         return Response(
-            {"detail": "Agreed amount has not been set for this booking."},
+            {"detail": "Agreed amount not set."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
-
     try:
+        # Use Decimal throughout for safe calculations
+        deposit_percentage = Decimal('0.70')
+
+        # Calculate deposit (do NOT save yet to avoid conflicting with model save())
+        deposit_amount = (booking.agreed_amount * deposit_percentage).quantize(Decimal('0.01'))
+        balance_amount = (booking.agreed_amount - deposit_amount).quantize(Decimal('0.01'))
+
+        reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
+
+        # Convert to kobo safely
+        amount_kobo = int(deposit_amount * Decimal('100'))
+
         response = paystack.transaction.initialize(
             reference=reference,
-            amount=int(booking.agreed_amount * 100),
+            amount=amount_kobo,
             email=request.user.email,
-            callback_url="https://atodapi.up.railway.app/api/paystack/webhook/",
+            callback_url="http://127.0.0.1:8000/api/paystack/webhook/",  # Frontend success page
             metadata={
                 "booking_id": booking.id,
                 "payment_type": "deposit",
@@ -297,21 +303,31 @@ def pay_deposit(request, pk):
             }
         )
 
-        data = response["data"]
+        if response.get("status"):
+            # NOW save the calculated amounts (this will trigger model save() safely)
+            booking.deposit_amount = deposit_amount
+            booking.balance_amount = balance_amount
+            booking.save(update_fields=["deposit_amount", "balance_amount"])
 
-        return Response({
-            "authorization_url": data["authorization_url"],
-            "reference": data["reference"],
-            "amount": booking.deposit_amount
-        })
+            return Response({
+                "authorization_url": response["data"]["authorization_url"],
+                "reference": response["data"]["reference"],
+                "amount": deposit_amount  # e.g., Decimal('98000.00')
+            })
+
+        else:
+            return Response(
+                {"detail": response.get("message", "Payment initialization failed")},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     except Exception as e:
-        logger.exception("❌ Deposit payment failed")
+        logger.exception("Deposit payment initialization failed")
         return Response(
-            {"detail": "Unable to initialize deposit payment."},
+            {"detail": f"Server error: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
+    
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def pay_balance(request, pk):
@@ -340,7 +356,7 @@ def pay_balance(request, pk):
             reference=reference,
             amount=int(booking.balance_amount * 100),
             email=request.user.email,
-            callback_url="https://frontend.com/payment-success",
+            callback_url="http://127.0.0.1:8000/api/paystack/webhook/",
             metadata={
                 "booking_id": booking.id,
                 "payment_type": "balance",
@@ -360,72 +376,178 @@ def pay_balance(request, pk):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-
-@csrf_exempt
-@api_view(['POST'])
+@api_view(['POST', 'GET'])
 @permission_classes([AllowAny])
 def paystack_webhook(request):
-    # Verify webhook signature (highly recommended)
-    signature = request.headers.get('x-paystack-signature')
-    if settings.PAYSTACK_WEBHOOK_SECRET:
-        computed_hmac = hmac.new(
-            settings.PAYSTACK_SECRET_KEY.encode(),
-            request.body,
-            hashlib.sha512
-        ).hexdigest()
-        if not hmac.compare_digest(computed_hmac, signature or ''):
-            return HttpResponse(status=400)
+    """
+    Secure Paystack webhook handler
+    - Only POST webhooks with valid signature and 'charge.success' event will update the database
+    - GET (browser callback) will only return user-friendly status (no DB updates for security)
+    """
 
-    payload = json.loads(request.body)
-    event = payload.get('event')
+    logger.info(f"Paystack callback/webhook hit: {request.method} from {request.META.get('REMOTE_ADDR')}")
 
-    if event == 'charge.success':
-        data = payload['data']
-        reference = data['reference']
-        metadata = data.get('metadata', {})
-        booking_id = metadata.get('booking_id')
-        payment_type = metadata.get('payment_type')
+    # === HANDLE GET (browser redirect after payment) ===
+    if request.method == 'GET':
+        reference = request.query_params.get('reference') or request.query_params.get('trxref')
+        if not reference:
+            return Response({"message": "No reference provided"}, status=400)
 
+        # Verify transaction for user feedback
         try:
-            booking = BookArtisan.objects.get(id=booking_id)
-        except BookArtisan.DoesNotExist:
-            return HttpResponse(status=200)
+            verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
+            headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+            resp = requests.get(verify_url, headers=headers)
+            data = resp.json()
 
-        # Prevent double processing
-        if payment_type == "deposit" and booking.status == "Accepted":
-            booking.status = "Deposit Paid"
-            booking.deposit_paid_at = timezone.now()
-            booking.save()
+            if data.get("status") and data["data"]["status"] == "success":
 
-            Notification.objects.create(
-                recipient=booking.artisan,
-                message=f"Client has paid ₦{booking.deposit_amount:,} deposit. You can now start the job!",
-                notification_type='PAYMENT'
-            )
-            Notification.objects.create(
-                recipient=booking.client,
-                message="Deposit payment successful! The artisan will begin work soon.",
-                notification_type='PAYMENT'
-            )
+                parts = reference.split("_")
+                payment_type = parts[0]
+                booking_id = int(parts[1])
+                booking = BookArtisan.objects.get(id=booking_id)
+                if payment_type == "deposit" and booking.status == "Accepted":
+                    booking.status = "Deposit Paid"
+                    booking.deposit_paid_at = timezone.now()
+                    booking.save()
 
-        elif payment_type == "balance" and booking.status == "Completed":
-            booking.status = "Paid in Full"
-            booking.fully_paid_at = timezone.now()
-            booking.save()
+                return Response({
+                    "message": "Payment successful! Your booking has been updated.",
+                    "status": "success"
+                }, status=200)
+            else:
+                return Response({
+                    "message": "Payment failed or abandoned. Please try again.",
+                    "status": data["data"]["status"] if data.get("data") else "failed"
+                }, status=200)
+        except Exception as e:
+            logger.exception("Error verifying GET callback")
+            return Response({"message": "Unable to verify payment status"}, status=500)
 
-            Notification.objects.create(
-                recipient=booking.artisan,
-                message=f"Final payment of ₦{booking.balance_amount:,} received. Funds released!",
-                notification_type='PAYMENT'
-            )
-            Notification.objects.create(
-                recipient=booking.client,
-                message="Balance payment successful. Thank you!",
-                notification_type='PAYMENT'
-            )
+    # === HANDLE POST (real webhook from Paystack) ===
+    # 1. Verify signature (critical for security)
+    signature = request.headers.get('x-paystack-signature')
+    if not signature:
+        logger.warning("Missing Paystack signature in webhook")
+        return Response(status=400)
 
-    return HttpResponse(status=200)
+    computed_signature = hmac.new(
+        settings.PAYSTACK_SECRET_KEY.encode('utf-8'),
+        request.body,
+        hashlib.sha512
+    ).hexdigest()
 
+    if not hmac.compare_digest(computed_signature, signature):
+        logger.warning("Invalid Paystack webhook signature")
+        return Response(status=400)
+
+    # 2. Parse payload safely
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON in webhook payload")
+        return Response(status=400)
+
+    event = payload.get('event')
+    if event != 'charge.success':
+        logger.info(f"Ignoring non-success event: {event}")
+        return Response({"message": "Event ignored"}, status=200)
+
+    data = payload.get('data', {})
+    reference = data.get('reference')
+    if not reference:
+        logger.warning("No reference in webhook payload")
+        return Response(status=400)
+
+    metadata = data.get('metadata', {})
+    amount_paid_kobo = data.get('amount', 0)  # Paystack sends amount in kobo
+
+    # Extract booking info
+    booking_id = metadata.get('booking_id')
+    payment_type = metadata.get('payment_type')
+
+    # Fallback parsing from reference (e.g., "deposit_4_1234567890")
+    if not booking_id or not payment_type:
+        try:
+            parts = reference.split("_")
+            if len(parts) >= 2:
+                payment_type = parts[0]
+                booking_id = int(parts[1])
+        except Exception:
+            logger.error(f"Failed to parse reference: {reference}")
+            return Response(status=400)
+
+    if not booking_id or not payment_type:
+        logger.error("Could not determine booking_id or payment_type")
+        return Response(status=400)
+
+    logger.info(f"Processing successful webhook for {payment_type} payment on booking {booking_id}, reference {reference}")
+
+    try:
+        with transaction.atomic():
+            booking = BookArtisan.objects.select_for_update().get(id=booking_id)
+
+            # Double-check amount (prevent tampering)
+            expected_field = booking.deposit_amount if payment_type == "deposit" else booking.balance_amount
+            if expected_field is None:
+                logger.warning(f"{payment_type.capitalize()} amount not set on booking {booking_id}")
+                return Response(status=200)
+
+            expected_kobo = int(expected_field * 100)
+            if amount_paid_kobo != expected_kobo:
+                logger.warning(f"Amount mismatch: expected {expected_kobo}, got {amount_paid_kobo}")
+                return Response(status=200)
+
+            # Update based on type and current status
+            updated = False
+            if payment_type == "deposit" and booking.status == "Accepted":
+                booking.status = "Deposit Paid"
+                booking.deposit_paid_at = timezone.now()
+                booking.save(update_fields=["status", "deposit_paid_at"])
+                updated = True
+
+                Notification.objects.create(
+                    recipient=booking.artisan,
+                    message=f"Client has paid ₦{booking.deposit_amount:,} deposit. You can now start the job!",
+                    notification_type="PAYMENT"
+                )
+                Notification.objects.create(
+                    recipient=booking.client,
+                    message="Deposit payment successful! The artisan will begin work soon.",
+                    notification_type="PAYMENT"
+                )
+
+            elif payment_type == "balance" and booking.status == "Completed":
+                booking.status = "Paid in Full"
+                booking.fully_paid_at = timezone.now()
+                booking.save(update_fields=["status", "fully_paid_at"])
+                updated = True
+
+                Notification.objects.create(
+                    recipient=booking.artisan,
+                    message=f"Final payment of ₦{booking.balance_amount:,} received. Funds released!",
+                    notification_type="PAYMENT"
+                )
+                Notification.objects.create(
+                    recipient=booking.client,
+                    message="Balance payment successful. Thank you!",
+                    notification_type="PAYMENT"
+                )
+
+            if updated:
+                logger.info(f"Successfully updated booking {booking_id} to {booking.status}")
+            else:
+                logger.info(f"No update needed for booking {booking_id} (current status: {booking.status})")
+
+        return Response({"message": "Webhook processed successfully"}, status=200)
+
+    except BookArtisan.DoesNotExist:
+        logger.error(f"Booking {booking_id} not found")
+        return Response(status=200)
+    except Exception as e:
+        logger.exception(f"Error processing webhook for {reference}")
+        return Response(status=200)  # Always 200 to prevent retries
+    
 class MaterialQuoteViewSet(viewsets.ModelViewSet):
     queryset = MaterialQuote.objects.all()
     serializer_class = MaterialQuoteSerializer
