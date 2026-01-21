@@ -127,7 +127,7 @@ DATABASES = {
 CORS_ALLOW_ALL_ORIGINS = True
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://atodapi-staging.up.railway.app',
+    "https://atodapi.up.railway.app",
 ]
 
 CORS_ALLOW_METHODS = [
