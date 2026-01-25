@@ -360,7 +360,7 @@ def pay_balance(request, pk):
             metadata={
                 "booking_id": booking.id,
                 "payment_type": "balance",
-                "user_id": request.user.id
+                "user_id": str(request.user.id)
             }
         )
 
