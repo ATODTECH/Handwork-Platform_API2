@@ -13,4 +13,5 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 ENV PYTHONPATH="/app"
 
 # Run Gunicorn with the correct import path
-CMD ["gunicorn", "-b", "0.0.0.0:8000", "setup.wsgi"]
+# CMD ["gunicorn", "-b", "0.0.0.0:8000", "setup.wsgi"]
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "setup.asgi:application"]
