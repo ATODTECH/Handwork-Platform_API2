@@ -28,11 +28,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'cloudinary',
     'cloudinary_storage',
+    'channels',
     'main',
     'services',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+    'chat',
 ]
 
 MIDDLEWARE = [
@@ -117,11 +119,27 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'setup.wsgi.application'
+ASGI_APPLICATION = 'setup.asgi.application'
 
 # Database
 DATABASES = {
     'default': env.db(),
 }
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [env('REDIS_URL')],
+        },
+    },
+}
+
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels.layers.InMemoryChannelLayer',
+#     },
+# }
 
 # CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = True
