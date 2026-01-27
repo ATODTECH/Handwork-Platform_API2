@@ -410,6 +410,10 @@ def paystack_webhook(request):
                     booking.status = "Deposit Paid"
                     booking.deposit_paid_at = timezone.now()
                     booking.save()
+                elif payment_type == "balance" and booking.status == "Completed":
+                    booking.status = "Paid in Full"
+                    booking.fully_paid_at = timezone.now()
+                    booking.save()
 
                 return Response({
                     "message": "Payment successful! Your booking has been updated.",
