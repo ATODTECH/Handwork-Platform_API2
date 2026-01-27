@@ -1,12 +1,9 @@
-# chat/middleware.py
 import jwt
-from jwt.exceptions import PyJWTError
-from django.contrib.auth.models import AnonymousUser
 from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
 from channels.db import database_sync_to_async
-from channels.auth import AuthMiddlewareStack
 from urllib.parse import parse_qs
-from main.models import User 
+from main.models import User  # Adjust to your User model import path
 
 @database_sync_to_async
 def get_user_from_token(token):
@@ -15,24 +12,29 @@ def get_user_from_token(token):
         user_id = payload.get('user_id')
         if user_id:
             return User.objects.get(id=user_id)
-    except (PyJWTError, User.DoesNotExist):
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, User.DoesNotExist):
         pass
     return AnonymousUser()
 
-class TokenAuthMiddleware:
+class BearerJWTAuthMiddleware:
     def __init__(self, inner):
         self.inner = inner
 
     async def __call__(self, scope, receive, send):
+        # Get token from Authorization header or query string
         headers = dict(scope.get('headers', []))
         auth_header = headers.get(b'authorization', b'').decode()
         query_string = scope.get('query_string', b'').decode()
         query_params = parse_qs(query_string)
+
         token = None
 
+        # Prefer header: Authorization: Bearer <token>
         if auth_header.startswith('Bearer '):
             token = auth_header.split(' ')[1]
-        elif query_params.get('token'):
+
+        # Fallback to query string: ?token=<token>
+        elif 'token' in query_params:
             token = query_params['token'][0]
 
         if token:
@@ -41,6 +43,3 @@ class TokenAuthMiddleware:
             scope['user'] = AnonymousUser()
 
         return await self.inner(scope, receive, send)
-
-def CustomAuthMiddlewareStack(inner):
-    return TokenAuthMiddleware(AuthMiddlewareStack(inner))
