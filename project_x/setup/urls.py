@@ -27,7 +27,6 @@ router.register("material_quotes", MaterialQuoteViewSet, basename='material-quot
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path("api/", include(router.urls)),
     path("api/reset/password", ResetPassword.as_view(), name='reset-password'),
     path('signin/client', SignInUserView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
@@ -37,10 +36,11 @@ urlpatterns = [
     path('api/toggle_availability', toggle_availability, name="toggle-switch"),
     path('api/bookings', get_today_bookings, name="today-bookings"),
     path('api/logs/', LogsView.as_view(), name='logs'),
-
     path('api/book/<int:pk>/pay-deposit/', pay_deposit, name='pay-deposit'),
     path('api/book/<int:pk>/pay-balance/', pay_balance, name='pay-balance'),
     path('api/paystack/webhook/', paystack_webhook, name='paystack-webhook'),
     path('api/artisan/earnings/', ArtisanEarningsView.as_view(), name='artisan-earnings'),
     path('api/artisan/payments/', ArtisanPaymentsView.as_view(), name='artisan-payments'),
+    
+    path("api/", include(router.urls)),
 ]
