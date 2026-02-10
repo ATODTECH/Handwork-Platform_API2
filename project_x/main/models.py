@@ -4,6 +4,7 @@ from django.db import models
 from django.utils import timezone, translation
 from uuid import uuid4
 from datetime import timedelta
+from decimal import Decimal
 from cloudinary_storage.storage import MediaCloudinaryStorage
 
 # from services.models.services_models import Services
@@ -85,6 +86,12 @@ class User(AbstractUser):
     document_type = models.CharField(choices=DOCUMENT_TYPE, max_length=16, null=True, blank=True)
     role = models.CharField(max_length=7, choices=ROLE, default="USER")
     onboardingComplete = models.BooleanField(default=False)
+    wallet_balance = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        default=Decimal('0.00'),
+        help_text="Withdrawable balance after deductions"
+    )
 
     isAvailable = models.BooleanField(default=True)
 

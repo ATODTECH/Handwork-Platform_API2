@@ -95,3 +95,16 @@ class MaterialQuote(models.Model):
 
     def __str__(self):
         return f"Material Quote #{self.id} - {self.job_title} by {self.artisan.get_full_name()}"
+    
+class Transaction(models.Model):
+    artisan = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transactions')
+    booking = models.ForeignKey(BookArtisan, on_delete=models.SET_NULL, null=True)
+    gross_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    platform_fee = models.DecimalField(max_digits=12, decimal_places=2)
+    vat = models.DecimalField(max_digits=12, decimal_places=2)
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    transaction_type = models.CharField(max_length=20)  # 'EARNING', 'WITHDRAWAL'
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.artisan.email} - ₦{self.net_amount} ({self.transaction_type})"

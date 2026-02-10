@@ -1,5 +1,5 @@
 from . import BookArtisan, ArtisanBookingSerializers, User
-from services.models.job_models import MaterialQuote
+from services.models.job_models import MaterialQuote, Transaction
 from services.serializers.job_serializers import MaterialQuoteSerializer
 from rest_framework import viewsets, response, status, filters
 from rest_framework.decorators import api_view
@@ -8,7 +8,7 @@ from django.db.models import Q
 from setup.processors.filters import BookingScheduleFilter
 from django.conf import settings
 from django.db import transaction
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.utils import timezone
 from decimal import Decimal
 from rest_framework.response import Response
@@ -19,6 +19,7 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import action, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.http import HttpResponse
+from rest_framework.views import APIView
 import json
 import hmac
 import hashlib
@@ -522,10 +523,33 @@ def paystack_webhook(request):
                 )
 
             elif payment_type == "balance" and booking.status == "Completed":
+                gross = booking.agreed_amount or booking.budget  # Use agreed_amount if set
+                platform_fee_rate = Decimal('0.10')  # 10%
+                vat_rate = Decimal('0.075')  # 7.5%
+
+                platform_fee = gross * platform_fee_rate
+                vat = gross * vat_rate  # VAT on gross
+                net_amount = gross - platform_fee - vat
+
+                # Add net to artisan wallet
+                booking.artisan.wallet_balance += net_amount
+                booking.artisan.save(update_fields=['wallet_balance'])
+
                 booking.status = "Paid in Full"
                 booking.fully_paid_at = timezone.now()
                 booking.save(update_fields=["status", "fully_paid_at"])
                 updated = True
+
+                # Create transaction record
+                Transaction.objects.create(
+                    artisan=booking.artisan,
+                    booking=booking,
+                    gross_amount=gross,
+                    platform_fee=platform_fee,
+                    vat=vat,
+                    net_amount=net_amount,
+                    transaction_type='EARNING'
+                )
 
                 Notification.objects.create(
                     recipient=booking.artisan,
@@ -582,3 +606,108 @@ class MaterialQuoteViewSet(viewsets.ModelViewSet):
         quotes = MaterialQuote.objects.filter(booking_id=booking_id)
         serializer = self.get_serializer(quotes, many=True)
         return Response(serializer.data)
+
+class ArtisanEarningsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'ARTISAN':
+            return Response({"detail": "Artisan only"}, status=403)
+
+        artisan = request.user
+
+        # Current balance
+        balance = artisan.wallet_balance
+
+        # Totals (net earnings from Paid in Full jobs)
+        now = timezone.now()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=today_start.weekday())
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        completed_jobs = BookArtisan.objects.filter(
+            artisan=artisan,
+            status="Paid in Full"
+        )
+
+        today_earnings = sum(
+            self.calculate_net(job.agreed_amount or job.budget)
+            for job in completed_jobs if job.fully_paid_at and job.fully_paid_at.date() == now.date()
+        )
+
+        week_earnings = sum(
+            self.calculate_net(job.agreed_amount or job.budget)
+            for job in completed_jobs if job.fully_paid_at and job.fully_paid_at >= week_start
+        )
+
+        month_earnings = sum(
+            self.calculate_net(job.agreed_amount or job.budget)
+            for job in completed_jobs if job.fully_paid_at and job.fully_paid_at >= month_start
+        )
+
+        return Response({
+            "balance": balance,
+            "total_earnings": {
+                "today": today_earnings,
+                "this_week": week_earnings,
+                "last_month": month_earnings 
+            }
+        })
+
+    def calculate_net(self, gross):
+        if not gross:
+            return Decimal('0.00')
+        platform_fee = gross * Decimal('0.10')
+        vat = gross * Decimal('0.075')
+        return gross - platform_fee - vat
+
+class ArtisanPaymentsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'ARTISAN':
+            return Response({"detail": "Artisan only"}, status=403)
+
+        # Recent completed (Paid in Full)
+        recent = BookArtisan.objects.filter(
+            artisan=request.user,
+            status="Paid in Full"
+        ).select_related('client').order_by('-fully_paid_at')[:10]
+
+        recent_data = [{
+            "client_name": job.client.get_full_name(),
+            "client_photo": job.client.photo.url if job.client.photo else None,
+            "service": ", ".join(s.name for s in job.services.all()),
+            "location": job.address,
+            "date": job.fully_paid_at.strftime("%d/%m/%Y"),
+            "amount": self.calculate_net(job.agreed_amount or job.budget),
+            "status": "Paid"
+        } for job in recent]
+
+        # Pending (Completed but balance not paid)
+        pending = BookArtisan.objects.filter(
+            artisan=request.user,
+            status="Completed"
+        ).select_related('client').order_by('-updated_at')
+
+        pending_data = [{
+            "client_name": job.client.get_full_name(),
+            "client_photo": job.client.photo.url if job.client.photo else None,
+            "service": ", ".join(s.name for s in job.services.all()),
+            "location": job.address,
+            "date": job.scheduled_date.strftime("%d/%m/%Y") if job.scheduled_date else "N/A",
+            "amount": job.balance_amount,  # Remaining balance
+            "status": "Pending"
+        } for job in pending]
+
+        return Response({
+            "recent_payments": recent_data,
+            "pending_payments": pending_data
+        })
+
+    def calculate_net(self, gross):
+        if not gross:
+            return Decimal('0.00')
+        platform_fee = gross * Decimal('0.10')
+        vat = gross * Decimal('0.075')
+        return gross - platform_fee - vat
