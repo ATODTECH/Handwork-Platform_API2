@@ -10,7 +10,7 @@ from django.conf import settings
 from django.db import transaction
 from datetime import datetime, timedelta
 from django.utils import timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from rest_framework.response import Response
 from main.models import Notification
 import logging, requests
@@ -23,6 +23,7 @@ from rest_framework.views import APIView
 import json
 import hmac
 import hashlib
+import traceback
 
 logger = logging.getLogger('services')
 
@@ -523,16 +524,16 @@ def paystack_webhook(request):
                 )
 
             elif payment_type == "balance" and booking.status == "Completed":
-                gross = booking.agreed_amount or booking.budget  # Use agreed_amount if set
+                gross = to_decimal(booking.agreed_amount or booking.budget) # Use agreed_amount if set
                 platform_fee_rate = Decimal('0.10')  # 10%
                 vat_rate = Decimal('0.075')  # 7.5%
 
-                platform_fee = gross * platform_fee_rate
-                vat = gross * vat_rate  # VAT on gross
-                net_amount = gross - platform_fee - vat
+                platform_fee = (gross * platform_fee_rate).quantize(Decimal('0.01'))
+                vat = (gross * vat_rate).quantize(Decimal('0.01'))  # VAT on gross
+                net_amount = (gross - platform_fee - vat).quantize(Decimal('0.01'))
 
                 # Add net to artisan wallet
-                booking.artisan.wallet_balance += net_amount
+                booking.artisan.wallet_balance = (to_decimal(booking.artisan.wallet_balance) + net_amount)
                 booking.artisan.save(update_fields=['wallet_balance'])
 
                 booking.status = "Paid in Full"
@@ -607,6 +608,20 @@ class MaterialQuoteViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(quotes, many=True)
         return Response(serializer.data)
 
+def to_decimal(value) -> Decimal:
+    """
+    Convert int/float/str/Decimal to Decimal safely.
+    Using str() prevents float binary rounding issues.
+    """
+    if value is None:
+        return Decimal('0.00')
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal('0.00')
+    
 class ArtisanEarningsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -646,68 +661,115 @@ class ArtisanEarningsView(APIView):
         )
 
         return Response({
-            "balance": balance,
+            "balance": float(balance),
             "total_earnings": {
-                "today": today_earnings,
-                "this_week": week_earnings,
-                "last_month": month_earnings 
+                "today": float(today_earnings),
+                "this_week": float(week_earnings),
+                "last_month": float(month_earnings)
             }
         })
 
     def calculate_net(self, gross):
-        if not gross:
-            return Decimal('0.00')
-        platform_fee = gross * Decimal('0.10')
-        vat = gross * Decimal('0.075')
-        return gross - platform_fee - vat
+        gross = to_decimal(gross)
+
+        platform_fee = (gross * Decimal('0.10'))
+        vat = (gross * Decimal('0.075'))
+        return (gross - platform_fee - vat).quantize(Decimal('0.01'))
 
 class ArtisanPaymentsView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        if request.user.role != 'ARTISAN':
-            return Response({"detail": "Artisan only"}, status=403)
-
-        # Recent completed (Paid in Full)
-        recent = BookArtisan.objects.filter(
-            artisan=request.user,
-            status="Paid in Full"
-        ).select_related('client').order_by('-fully_paid_at')[:10]
-
-        recent_data = [{
-            "client_name": job.client.get_full_name(),
-            "client_photo": job.client.photo.url if job.client.photo else None,
-            "service": ", ".join(s.name for s in job.services.all()),
-            "location": job.address,
-            "date": job.fully_paid_at.strftime("%d/%m/%Y"),
-            "amount": self.calculate_net(job.agreed_amount or job.budget),
-            "status": "Paid"
-        } for job in recent]
-
-        # Pending (Completed but balance not paid)
-        pending = BookArtisan.objects.filter(
-            artisan=request.user,
-            status="Completed"
-        ).select_related('client').order_by('-updated_at')
-
-        pending_data = [{
-            "client_name": job.client.get_full_name(),
-            "client_photo": job.client.photo.url if job.client.photo else None,
-            "service": ", ".join(s.name for s in job.services.all()),
-            "location": job.address,
-            "date": job.scheduled_date.strftime("%d/%m/%Y") if job.scheduled_date else "N/A",
-            "amount": job.balance_amount,  # Remaining balance
-            "status": "Pending"
-        } for job in pending]
-
-        return Response({
-            "recent_payments": recent_data,
-            "pending_payments": pending_data
-        })
-
     def calculate_net(self, gross):
-        if not gross:
-            return Decimal('0.00')
-        platform_fee = gross * Decimal('0.10')
-        vat = gross * Decimal('0.075')
-        return gross - platform_fee - vat
+        gross = to_decimal(gross)
+
+        platform_fee = (gross * Decimal('0.10'))
+        vat = (gross * Decimal('0.075'))
+        net = gross - platform_fee - vat
+
+        return float(net.quantize(Decimal('0.01')))
+
+
+    def get(self, request):
+        print("=== ArtisanPaymentsView HIT ===", request.user.id, request.user.role)
+
+        try:
+            if request.user.role != 'ARTISAN':
+                return Response({"detail": "Artisan only"}, status=403)
+
+            print("STEP 1: fetching recent")
+            recent = BookArtisan.objects.filter(
+                artisan=request.user,
+                status="Paid in Full"
+            ).select_related('client').prefetch_related('services').order_by('-fully_paid_at')[:10]
+            print("STEP 1b: recent count", recent.count())
+
+            recent_data = []
+            for idx, job in enumerate(recent, start=1):
+                print("STEP 2: building recent item", idx, "job_id", job.id)
+
+                client_photo = None
+                if getattr(job.client, "photo", None):
+                    try:
+                        client_photo = job.client.photo.url
+                    except Exception as e:
+                        print("PHOTO URL ERROR:", str(e))
+                        client_photo = None
+
+                amount = self.calculate_net(job.agreed_amount or job.budget)
+                print("STEP 2b: amount computed", amount)
+
+                recent_data.append({
+                    "client": {
+                        "id": str(job.client.id),
+                        "name": job.client.get_full_name() or job.client.email,
+                        "photo": client_photo
+                    },
+                    "service": ", ".join(s.name for s in job.services.all()),
+                    "location": job.address or "N/A",
+                    "date": job.fully_paid_at.strftime("%d/%m/%Y") if job.fully_paid_at else "N/A",
+                    "amount": amount,
+                    "status": "Paid"
+                })
+
+            print("STEP 3: fetching pending")
+            pending = BookArtisan.objects.filter(
+                artisan=request.user,
+                status="Completed"
+            ).select_related('client').prefetch_related('services').order_by('-updated_at')
+            print("STEP 3b: pending count", pending.count())
+
+            pending_data = []
+            for idx, job in enumerate(pending, start=1):
+                print("STEP 4: building pending item", idx, "job_id", job.id)
+
+                client_photo = None
+                if getattr(job.client, "photo", None):
+                    try:
+                        client_photo = job.client.photo.url
+                    except Exception as e:
+                        print("PHOTO URL ERROR:", str(e))
+                        client_photo = None
+
+                pending_data.append({
+                    "client": {
+                        "id": str(job.client.id),
+                        "name": job.client.get_full_name() or job.client.email,
+                        "photo": client_photo
+                    },
+                    "service": ", ".join(s.name for s in job.services.all()),
+                    "location": job.address or "N/A",
+                    "date": job.scheduled_date.strftime("%d/%m/%Y") if job.scheduled_date else "N/A",
+                    "amount": float(job.balance_amount) if job.balance_amount else 0.00,
+                    "status": "Pending"
+                })
+
+            return Response({
+                "recent_payments": recent_data,
+                "pending_payments": pending_data
+            })
+
+        except Exception as e:
+            # 👇 this WILL print the exact failing line
+            print("=== ArtisanPaymentsView CRASH ===", str(e))
+            print(traceback.format_exc())
+            raise  # re-raise so Django prints full error too
