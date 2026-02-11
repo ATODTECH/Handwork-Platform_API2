@@ -413,9 +413,43 @@ def paystack_webhook(request):
                     booking.deposit_paid_at = timezone.now()
                     booking.save()
                 elif payment_type == "balance" and booking.status == "Completed":
+                    gross = to_decimal(booking.agreed_amount or booking.budget) # Use agreed_amount if set
+                    platform_fee_rate = Decimal('0.10')  # 10%
+                    vat_rate = Decimal('0.075')  # 7.5%
+
+                    platform_fee = (gross * platform_fee_rate).quantize(Decimal('0.01'))
+                    vat = (gross * vat_rate).quantize(Decimal('0.01'))  # VAT on gross
+                    net_amount = (gross - platform_fee - vat).quantize(Decimal('0.01'))
+
+                    # Add net to artisan wallet
+                    booking.artisan.wallet_balance = (booking.artisan.wallet_balance + net_amount).quantize(Decimal('0.01'))
+                    booking.artisan.save(update_fields=['wallet_balance'])
+
+                    # Create transaction record (optional)
+                    Transaction.objects.create(
+                        artisan=booking.artisan,
+                        booking=booking,
+                        gross_amount=gross,
+                        platform_fee=platform_fee,
+                        vat=vat,
+                        net_amount=net_amount,
+                        transaction_type='EARNING'
+                    )
+
                     booking.status = "Paid in Full"
                     booking.fully_paid_at = timezone.now()
                     booking.save()
+
+                Notification.objects.create(
+                    recipient=booking.artisan,
+                    message=f"Payment received for booking {booking_id}.",
+                    notification_type="PAYMENT"
+                )
+                Notification.objects.create(
+                    recipient=booking.client,
+                    message=f"Payment successful for booking {booking_id}.",
+                    notification_type="PAYMENT"
+                )
 
                 return Response({
                     "message": "Payment successful! Your booking has been updated.",
@@ -533,7 +567,7 @@ def paystack_webhook(request):
                 net_amount = (gross - platform_fee - vat).quantize(Decimal('0.01'))
 
                 # Add net to artisan wallet
-                booking.artisan.wallet_balance = (to_decimal(booking.artisan.wallet_balance) + net_amount)
+                booking.artisan.wallet_balance = (booking.artisan.wallet_balance + net_amount).quantize(Decimal('0.01'))
                 booking.artisan.save(update_fields=['wallet_balance'])
 
                 booking.status = "Paid in Full"
