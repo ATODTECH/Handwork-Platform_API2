@@ -419,7 +419,7 @@ def paystack_webhook(request):
 
                     platform_fee = (gross * platform_fee_rate).quantize(Decimal('0.01'))
                     vat = (gross * vat_rate).quantize(Decimal('0.01'))  # VAT on gross
-                    net_amount = (gross - platform_fee - vat).quantize(Decimal('0.01'))
+                    net_amount = (gross - platform_fee).quantize(Decimal('0.01'))
 
                     # Add net to artisan wallet
                     booking.artisan.wallet_balance = (booking.artisan.wallet_balance + net_amount).quantize(Decimal('0.01'))
@@ -564,7 +564,7 @@ def paystack_webhook(request):
 
                 platform_fee = (gross * platform_fee_rate).quantize(Decimal('0.01'))
                 vat = (gross * vat_rate).quantize(Decimal('0.01'))  # VAT on gross
-                net_amount = (gross - platform_fee - vat).quantize(Decimal('0.01'))
+                net_amount = (gross - platform_fee).quantize(Decimal('0.01'))
 
                 # Add net to artisan wallet
                 booking.artisan.wallet_balance = (booking.artisan.wallet_balance + net_amount).quantize(Decimal('0.01'))
