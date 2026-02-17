@@ -20,6 +20,7 @@ from rest_framework.decorators import action, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.http import HttpResponse
 from rest_framework.views import APIView
+from django.utils.dateparse import parse_date
 import json
 import hmac
 import hashlib
@@ -806,4 +807,67 @@ class ArtisanPaymentsView(APIView):
             # 👇 this WILL print the exact failing line
             print("=== ArtisanPaymentsView CRASH ===", str(e))
             print(traceback.format_exc())
-            raise  # re-raise so Django prints full error too
+            raise 
+
+class ArtisanEarningsFilterView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'ARTISAN':
+            return Response({"detail": "Artisan only"}, status=403)
+
+        artisan = request.user
+
+        # Current withdrawable balance
+        balance = float(artisan.wallet_balance)
+
+        # Get date range from query params (YYYY-MM-DD)
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+
+        # Parse dates
+        start_date = parse_date(start_date_str) if start_date_str else None
+        end_date = parse_date(end_date_str) if end_date_str else None
+
+        # Base queryset: all Paid in Full jobs
+        completed_jobs = BookArtisan.objects.filter(
+            artisan=artisan,
+            status="Paid in Full"
+        )
+
+        # Apply date filter if both dates provided
+        if start_date and end_date:
+            # Include the end date fully
+            end_date_next = end_date + timedelta(days=1)
+            completed_jobs = completed_jobs.filter(
+                fully_paid_at__gte=start_date,
+                fully_paid_at__lt=end_date_next
+            )
+            logger.info(f"Filtered earnings for {artisan.email}: {start_date} to {end_date}")
+        elif start_date or end_date:
+            return Response({
+                "detail": "Both start_date and end_date are required for filtering."
+            }, status=400)
+
+        # Calculate total net earnings
+        total_earnings = sum(
+            self.calculate_net(job.agreed_amount or job.budget)
+            for job in completed_jobs
+            if job.fully_paid_at 
+        )
+
+        return Response({
+            "balance": balance,
+            "total_earnings": float(total_earnings),
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+        })
+
+    def calculate_net(self, gross):
+        if not gross:
+            return Decimal('0.00')
+        gross = Decimal(gross)
+        platform_fee = gross * Decimal('0.10')
+        vat = gross * Decimal('0.075')
+        net = gross - platform_fee - vat
+        return float(net.quantize(Decimal('0.01')))

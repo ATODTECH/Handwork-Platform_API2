@@ -6,3 +6,6 @@ INFO 2026-02-11 11:13:15,408 job_process Paystack callback/webhook hit: GET from
 INFO 2026-02-11 11:13:46,861 job_process Paystack callback/webhook hit: GET from 127.0.0.1
 INFO 2026-02-11 11:28:51,413 job_process Paystack callback/webhook hit: GET from 127.0.0.1
 INFO 2026-02-11 11:29:22,310 job_process Paystack callback/webhook hit: GET from 127.0.0.1
+INFO 2026-02-17 04:27:47,708 job_process Filtered earnings for Testartisan@gmail.com: 2026-01-01 to 2026-01-31
+INFO 2026-02-17 04:30:09,662 job_process Filtered earnings for Testartisan@gmail.com: 2026-01-01 to 2026-01-31
+INFO 2026-02-17 04:32:03,113 job_process Filtered earnings for Testartisan@gmail.com: 2026-01-01 to 2026-01-31

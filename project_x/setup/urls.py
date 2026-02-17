@@ -7,7 +7,7 @@ from main.views.user_auth import (
     get_my_ratings, NotificationViewSet, LogsView
 )
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
-from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView
+from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 router = routers.DefaultRouter()
@@ -40,6 +40,7 @@ urlpatterns = [
     path('api/book/<int:pk>/pay-balance/', pay_balance, name='pay-balance'),
     path('api/paystack/webhook/', paystack_webhook, name='paystack-webhook'),
     path('api/artisan/earnings/', ArtisanEarningsView.as_view(), name='artisan-earnings'),
+    path('api/artisan/earnings/filter/', ArtisanEarningsFilterView.as_view(), name='artisan-earnings-filter'),
     path('api/artisan/payments/', ArtisanPaymentsView.as_view(), name='artisan-payments'),
     
     path("api/", include(router.urls)),
