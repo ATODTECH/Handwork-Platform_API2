@@ -1,3 +1,4 @@
+from django.http import JsonResponse
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
@@ -10,7 +11,9 @@ from services.views.service import ServiceViewSet, ServiceSearchViewSet, Categor
 from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
 from rest_framework_simplejwt.views import TokenRefreshView
 
-router = routers.DefaultRouter()
+def health_check(request):
+    return JsonResponse({"status": "ok", "service": "User Artisan API", "version": "1.0"})
+router = routers.DefaultRouter(trailing_slash=False)
 
 router.register("user", SignUpUserView, basename='signup-user')
 router.register("artisan", SignUpArtisanViewSet, basename='signup-artisan')
@@ -26,6 +29,7 @@ router.register("notifications", NotificationViewSet, basename='notifications')
 router.register("material_quotes", MaterialQuoteViewSet, basename='material-quote')
 
 urlpatterns = [
+    path('', health_check, name='health-check'),
     path('admin/', admin.site.urls),
     path("api/reset/password", ResetPassword.as_view(), name='reset-password'),
     path('signin/client', SignInUserView.as_view(), name='token_obtain_pair'),

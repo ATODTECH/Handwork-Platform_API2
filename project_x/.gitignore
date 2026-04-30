@@ -4,4 +4,11 @@
 # logs/
 venv/
 main/__pycache__/
-*.pyc
+*.pyc__pycache__/ 
+*.pyc 
+*.pyo 
+.env 
+__pycache__/ 
+*.pyc 
+*.pyo 
+.env 
