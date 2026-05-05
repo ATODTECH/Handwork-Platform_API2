@@ -10,7 +10,8 @@ from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer
 from main.permissions import IsArtisanPermission
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import serializers
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from django.db import IntegrityError
 from django.db.models import Q
 from django.core.cache import cache
@@ -384,7 +385,19 @@ class LogsView(APIView):
                 {"error": f"Error reading log file: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_account(request):
+    user = request.user
+    user.is_active = False
+    user.save()
+    logger.info(f"Account deactivated for user {user.email}")
+    return response.Response(
+        {"message": "Account successfully deactivated."},
+        status=status.HTTP_200_OK
+    )
 
 @api_view(["GET"])
 def get_my_ratings(request, pk):

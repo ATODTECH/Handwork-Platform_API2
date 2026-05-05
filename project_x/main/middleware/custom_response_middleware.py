@@ -1,58 +1,67 @@
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
 from rest_framework.views import exception_handler
+from rest_framework.renderers import JSONRenderer
 from django.db import IntegrityError
-import traceback
+import json
+
 
 class CustomResponseMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
-        # Skip custom processing for Swagger/OpenAPI schema views
+        # Skip Swagger/Redoc
         if request.path.startswith('/swagger') or request.path.startswith('/redoc'):
             return response
 
-        # Check if 'Content-Type' header exists in the response
+        # Skip HTML responses
         content_type = response.headers.get('Content-Type', '')
-
-        # Skip custom processing for HTML responses (e.g., Swagger UI)
         if 'text/html' in content_type:
             return response
 
-        # Check if it's an error (e.g., 4xx or 5xx)
-        if 200 <= response.status_code < 300:
-            status = True
-            message = "Request Successful"
-            data = response.data if hasattr(response, 'data') else {}
-        else:
-            status = False
-            message = response.reason_phrase or "An error occurred"
-            data = response.data if hasattr(response, 'data') else {}
+        # Skip responses that don't have .data (e.g. raw HttpResponse)
+        if not hasattr(response, 'data'):
+            return response
 
-        # Build the custom response structure
-        custom_response = {
-            'status': status,
-            'message': message,
-            'data': data
-        }
+        try:
+            if 200 <= response.status_code < 300:
+                status = True
+                message = "Request Successful"
+            else:
+                status = False
+                message = response.reason_phrase or "An error occurred"
 
-        # Return the custom formatted response as a JsonResponse
-        return JsonResponse(custom_response, status=response.status_code)
+            # ✅ Use DRF's JSONRenderer to handle UUID, Decimal, datetime safely
+            data = response.data if response.data is not None else {}
+            rendered = JSONRenderer().render(data)
+            safe_data = json.loads(rendered)
+
+            custom_response = {
+                'status': status,
+                'message': message,
+                'data': safe_data
+            }
+
+            return JsonResponse(custom_response, status=response.status_code)
+
+        except Exception as e:
+            # If middleware itself crashes, return the original response untouched
+            return response
 
     def process_exception(self, request, exception):
-        # Use DRF's exception handler first
         response = exception_handler(exception, None)
 
         if response is not None:
             return self.process_response(request, response)
 
-        # Handle IntegrityError and other exceptions explicitly
         if isinstance(exception, IntegrityError):
             return JsonResponse({
                 'status': False,
-                'message': str(exception),  # Return the detailed exception message
+                'message': str(exception),
+                'data': {}
             }, status=400)
 
-        # For non-DRF handled exceptions
         return JsonResponse({
             'status': False,
-            'message': str(exception),  # Return the exception message # Optional: stack trace for debugging
+            'message': str(exception),
+            'data': {}
         }, status=500)
+

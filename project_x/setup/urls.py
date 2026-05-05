@@ -5,7 +5,7 @@ from django.urls import path, include
 from rest_framework import routers
 from main.views.user_auth import (
     SignUpUserView, SignInUserView, SignUpArtisanViewSet,
-    SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet,
+    SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, delete_account,
     get_my_ratings, NotificationViewSet, LogsView,
     ForgotPasswordRequestOTP, ForgotPasswordVerifyOTP
 )
@@ -52,6 +52,7 @@ urlpatterns = [
     path('api/artisan/payments/', ArtisanPaymentsView.as_view(), name='artisan-payments'),
     path("api/forgot-password/request-otp", ForgotPasswordRequestOTP.as_view(), name='forgot-password-request-otp'),
     path("api/forgot-password/verify-otp", ForgotPasswordVerifyOTP.as_view(), name='forgot-password-verify-otp'),
+    path('api/delete-account', delete_account, name='delete_account'),
 
     path("api/", include(router.urls)),
 ]
