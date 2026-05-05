@@ -57,7 +57,7 @@ class User(AbstractUser):
     last_name = models.CharField(max_length=250)
     email = models.EmailField(max_length=254, unique=True)
     password = models.CharField(max_length=128)
-    contact = models.CharField(max_length=15, unique=False)
+    contact = models.CharField(max_length=15, unique=True)
     profile_image = models.ImageField(
         translation.gettext_lazy('profile picture'),
         upload_to='profile_images/',

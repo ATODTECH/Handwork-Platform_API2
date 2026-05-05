@@ -9,3 +9,25 @@ INFO 2026-02-11 11:29:22,310 job_process Paystack callback/webhook hit: GET from
 INFO 2026-02-17 04:27:47,708 job_process Filtered earnings for Testartisan@gmail.com: 2026-01-01 to 2026-01-31
 INFO 2026-02-17 04:30:09,662 job_process Filtered earnings for Testartisan@gmail.com: 2026-01-01 to 2026-01-31
 INFO 2026-02-17 04:32:03,113 job_process Filtered earnings for Testartisan@gmail.com: 2026-01-01 to 2026-01-31
+INFO 2026-05-05 04:32:53,302 signals Onboarding Level One marked for user d0aff9a5-e72d-4651-9d1f-80da52b605fa!
+INFO 2026-05-05 04:32:58,125 user_auth User created: atodtech200@gmail.com (ID: d0aff9a5-e72d-4651-9d1f-80da52b605fa)
+INFO 2026-05-05 04:33:33,887 signals Onboarding Level One marked for user 47dd925f-5c67-4435-a72b-bc7a4abda75f!
+INFO 2026-05-05 04:33:38,657 user_auth User created: olomuoladipupomicheal22@gmail.com (ID: 47dd925f-5c67-4435-a72b-bc7a4abda75f)
+INFO 2026-05-05 04:38:26,099 signals User 8964674a-fb1c-43ad-bd30-1000423a840c onboarded successfully
+WARNING 2026-05-05 04:40:49,226 user_auth Invalid user signup data: {'contact': [ErrorDetail(string='user with this contact already exists.', code='unique')]}
+INFO 2026-05-05 04:41:13,850 signals Onboarding Level One marked for user fbbd5652-b151-4a4f-984e-226c7102611e!
+INFO 2026-05-05 04:41:18,622 user_auth User created: atodtech200@gmail.com (ID: fbbd5652-b151-4a4f-984e-226c7102611e)
+INFO 2026-05-05 04:46:59,829 user_auth User signed in: atodtech200@gmail.com
+INFO 2026-05-05 04:51:18,287 user_auth OTP sent to atodtech200@gmail.com
+INFO 2026-05-05 04:55:27,964 user_auth OTP sent to atodtech200@gmail.com
+INFO 2026-05-05 04:59:03,681 user_auth OTP sent to atodtech200@gmail.com
+WARNING 2026-05-05 10:10:15,519 user_auth Invalid user signup data: {'email': [ErrorDetail(string='user with this email already exists.', code='unique')]}
+INFO 2026-05-05 10:12:26,708 signals Onboarding Level One marked for user bf3d0560-b881-4b76-bb97-9557394001fd!
+INFO 2026-05-05 10:12:30,653 user_auth User created: olomuoladipupomicheal22@gmail.com (ID: bf3d0560-b881-4b76-bb97-9557394001fd)
+INFO 2026-05-05 10:20:47,677 user_auth User signed in: olomuoladipupomicheal22@gmail.com
+INFO 2026-05-05 10:25:08,938 signals Onboarding Level One marked for user 09f7413d-7c4a-4bb8-a2bc-c3d519ebf81d!
+INFO 2026-05-05 10:25:14,584 user_auth User created: olomuoladipupomicheal22@gmail.com (ID: 09f7413d-7c4a-4bb8-a2bc-c3d519ebf81d)
+INFO 2026-05-05 10:25:30,805 user_auth User signed in: olomuoladipupomicheal22@gmail.com
+INFO 2026-05-05 10:27:05,189 user_auth OTP sent to olomuoladipupomicheal22@gmail.com
+INFO 2026-05-05 10:28:47,130 user_auth OTP sent to atodtech200@gmail.com
+INFO 2026-05-05 10:44:33,956 user_auth OTP sent to atodtech200@gmail.com

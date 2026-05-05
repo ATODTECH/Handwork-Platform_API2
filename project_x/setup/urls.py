@@ -3,9 +3,10 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
 from main.views.user_auth import (
-    SignUpUserView, SignInUserView, SignUpArtisanViewSet, 
-    SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, 
-    get_my_ratings, NotificationViewSet, LogsView
+    SignUpUserView, SignInUserView, SignUpArtisanViewSet,
+    SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet,
+    get_my_ratings, NotificationViewSet, LogsView,
+    ForgotPasswordRequestOTP, ForgotPasswordVerifyOTP
 )
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
@@ -13,6 +14,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 def health_check(request):
     return JsonResponse({"status": "ok", "service": "User Artisan API", "version": "1.0"})
+
 router = routers.DefaultRouter(trailing_slash=False)
 
 router.register("user", SignUpUserView, basename='signup-user')
@@ -46,6 +48,8 @@ urlpatterns = [
     path('api/artisan/earnings/', ArtisanEarningsView.as_view(), name='artisan-earnings'),
     path('api/artisan/earnings/filter/', ArtisanEarningsFilterView.as_view(), name='artisan-earnings-filter'),
     path('api/artisan/payments/', ArtisanPaymentsView.as_view(), name='artisan-payments'),
-    
+    path("api/forgot-password/request-otp", ForgotPasswordRequestOTP.as_view(), name='forgot-password-request-otp'),
+    path("api/forgot-password/verify-otp", ForgotPasswordVerifyOTP.as_view(), name='forgot-password-verify-otp'),
+
     path("api/", include(router.urls)),
 ]
