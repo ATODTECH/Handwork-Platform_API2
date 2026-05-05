@@ -17,7 +17,7 @@ env.read_env(str(BASE_DIR / '.env'))
 SECRET_KEY = env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env.bool('DEBUG', default=False)
 
 ALLOWED_HOSTS = ["*"]
 
@@ -160,8 +160,10 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-PAYSTACK_SECRET_KEY = "sk_test_bc5525682c1c38c7af15b6179297251937e6fcbc" 
-PAYSTACK_PUBLIC_KEY = "pk_test_bc5525682c1c38c7af15b6179297251937e6fcbc"
+# Replace the hardcoded keys with:
+PAYSTACK_SECRET_KEY = env('PAYSTACK_SECRET_KEY')
+
+BASE_URL = env('BASE_URL', default='http://127.0.0.1:8000')
 
 CORS_ALLOW_HEADERS = [
     'accept',
