@@ -1,3 +1,4 @@
+from django.urls import path, include
 from django.http import JsonResponse
 from django.contrib import admin
 from django.urls import path, include
@@ -33,6 +34,7 @@ router.register("material_quotes", MaterialQuoteViewSet, basename='material-quot
 urlpatterns = [
     path('', health_check, name='health-check'),
     path('admin/', admin.site.urls),
+    path('', include('chat.urls')),
     path("api/reset/password", ResetPassword.as_view(), name='reset-password'),
     path('signin/client', SignInUserView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
