@@ -25,7 +25,6 @@ INSTALLED_APPS = [
 
     # third-party
     'rest_framework',
-    'rest_framework_simplejwt',
     'corsheaders',
     # "django_ratelimit",
 
@@ -83,19 +82,19 @@ CONN_MAX_AGE = 600
 CONN_HEALTH_CHECKS = True
 
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated', # Protects all views by default
-    ),
-}
+# REST_FRAMEWORK = {
+#     'DEFAULT_AUTHENTICATION_CLASSES': (
+#         'rest_framework_simplejwt.authentication.JWTAuthentication',
+#     ),
+#     'DEFAULT_PERMISSION_CLASSES': (
+#         'rest_framework.permissions.IsAuthenticated', # Protects all views by default
+#     ),
+# }
 
 # JWT Cookie Settings for production/security
-SIMPLE_JWT = {
-    'AUTH_HEADER_TYPES': ('Bearer',),
-}
+# SIMPLE_JWT = {
+#     'AUTH_HEADER_TYPES': ('Bearer',),
+# }
 
 
 # Session

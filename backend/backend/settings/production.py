@@ -12,8 +12,7 @@ API_KEY = os.getenv('API_KEY')
 
 DEBUG = os.getenv('DJANGO_DEBUG') == 'True'
 
-ALLOWED_HOSTS = ['*']
-# ALLOWED_HOSTS = ['spin-wheel-production.up.railway.app', 'spin-wheel-orpin.vercel.app', 'spin-wheel.com', '*.spin-wheel.com']
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 SECURE_SSL_REDIRECT = os.getenv('DJANGO_DEBUG') != 'True'
 
@@ -30,7 +29,7 @@ INSTALLED_APPS = [
 
     # third-party
     'rest_framework',
-    'rest_framework_simplejwt',
+    # 'rest_framework_simplejwt',
     'corsheaders',
 
     # apps
@@ -55,9 +54,9 @@ ROOT_URLCONF = 'backend.urls'
 
 CORS_ALLOW_CREDENTIALS = True
 
-# CORS_ALLOWED_ORIGINS = ['https://spin-wheel-production.up.railway.app', 'https://spin-wheel-orpin.vercel.app', 'https://spin-wheel.com', 'https://*.spin-wheel.com']
+CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
 
-# CSRF_TRUSTED_ORIGINS = ['https://spin-wheel-production.up.railway.app', 'https://spin-wheel-orpin.vercel.app', 'https://spin-wheel.com', 'https://*.spin-wheel.com']
+CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
 
 TEMPLATES = [
     {
@@ -86,19 +85,19 @@ CONN_MAX_AGE = 600
 CONN_HEALTH_CHECKS = True
 
 
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.IsAuthenticated', # Protects all views by default
-    ),
-}
+# REST_FRAMEWORK = {
+#     'DEFAULT_AUTHENTICATION_CLASSES': (
+#         'rest_framework_simplejwt.authentication.JWTAuthentication',
+#     ),
+#     'DEFAULT_PERMISSION_CLASSES': (
+#         'rest_framework.permissions.IsAuthenticated', # Protects all views by default
+#     ),
+# }
 
 # JWT Cookie Settings for production/security
-SIMPLE_JWT = {
-    'AUTH_HEADER_TYPES': ('Bearer',),
-}
+# SIMPLE_JWT = {
+#     'AUTH_HEADER_TYPES': ('Bearer',),
+# }
 
 
 # Session

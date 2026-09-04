@@ -1,6 +1,6 @@
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 # from django_ratelimit.decorators import ratelimit
-from .models import Contact, Subscribe
 
 # Create your views here.
 from rest_framework.views import APIView
@@ -14,28 +14,35 @@ from .serializers import ContactSerializer, SubscribeSerializer
 
 # class ContactRateThrottle(AnonRateThrottle):
 #   scope = "contact_us"
+secret = str(settings.API_KEY)
+
 
 class ContactUsView(APIView):
-  permission_classes = [IsAuthenticated]
-  # throttle_classes = [ContactRateThrottle]
   # contact/api/
+  # permission_classes = [IsAuthenticated]
+  # throttle_classes = [ContactRateThrottle]
   # @ratelimit(key="ip", rate="5/m", method="POST", block=True)
   def post(self, req):
     """Stores general contact user's info"""
-    serializer = ContactSerializer(data=req.data)
-    if not serializer.is_valid():
-      return Response({'status': "error", 'errors': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
-    serializer.save()
-    return Response({'status': "success"}, status=status.HTTP_201_CREATED)
+    if (req.headers.get('Authorization') == secret):
+      serializer = ContactSerializer(data=req.data, partial=True)
+      if not serializer.is_valid():
+        return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
+      serializer.save()
+      print(req.data.get('name'))
+      return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
+    return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_401_UNAUTHORIZED)
+  
 
 class SubscribeView(APIView):
-  permission_classes = [IsAuthenticated]
   # contact/subscribe/api/
   def post(self, req):
     """Stores general subscribing user's mail"""
-    serializer = SubscribeSerializer(data=req.data)
-    if not serializer.is_valid():
-      return Response({'status': "error", 'errors': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
-    serializer.save()
-    return Response({'status': "success"}, status=status.HTTP_201_CREATED)
+    if (req.headers.get('Authorization') == secret):
+      serializer = SubscribeSerializer(data=req.data)
+      if not serializer.is_valid():
+        return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
+      serializer.save()
+      return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
+    return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_401_UNAUTHORIZED)
 
