@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.http import JsonResponse
 # from django_ratelimit.decorators import ratelimit
 
 # Create your views here.
@@ -16,9 +18,16 @@ from .serializers import ContactSerializer, SubscribeSerializer
 #   scope = "contact_us"
 secret = str(settings.API_KEY)
 
+@ensure_csrf_cookie
+def init_session(req):
+  """ensures csrf onload"""
+  if (req.headers.get('Authorization') == secret):
+    return JsonResponse({'data':"accepted", 'status': "202"})
+  return JsonResponse({"data":"not accepted", "status": "401"})
 
 class ContactUsView(APIView):
   # contact/api/
+
   # permission_classes = [IsAuthenticated]
   # throttle_classes = [ContactRateThrottle]
   # @ratelimit(key="ip", rate="5/m", method="POST", block=True)
@@ -29,9 +38,8 @@ class ContactUsView(APIView):
       if not serializer.is_valid():
         return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
       serializer.save()
-      print(req.data.get('name'))
       return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
-    return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
   
 
 class SubscribeView(APIView):
@@ -44,5 +52,5 @@ class SubscribeView(APIView):
         return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
       serializer.save()
       return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
-    return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
 
