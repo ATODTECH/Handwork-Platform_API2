@@ -15,7 +15,9 @@ class Contact(models.Model):
     indexes = [
       models.Index(fields=["email", "timestamp"]),
     ]
-
+  
+  def __str__(self):
+    return f"Email: {self.email} => Message: {self.message}"
 
 
 class Subscribe(models.Model):
@@ -26,3 +28,6 @@ class Subscribe(models.Model):
 
   class Meta:
     ordering = ["-createdAt"]
+
+  def __str__(self):
+    return f"Time: {self.createdAt} => Email: {self.email}"
