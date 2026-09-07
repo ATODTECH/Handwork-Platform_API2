@@ -38,8 +38,7 @@ class ContactUsView(APIView):
       serializer = ContactSerializer(data=req.data, partial=True)
       if not serializer.is_valid():
         return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
-      # serializer.save()
-      print(serializer.validated_data)
+      serializer.save()
       return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
     return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
   
