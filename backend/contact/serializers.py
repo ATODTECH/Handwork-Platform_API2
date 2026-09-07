@@ -12,16 +12,8 @@ class ContactSerializer(serializers.ModelSerializer):
     value = value.strip()
     if not value:
       raise serializers.ValidationError("Name cannot be empty.")
-    if len(value) > 120:
+    if len(value) > 100:
       raise serializers.ValidationError("Name is too long.")
-    return strip_tags(value)
-
-  def validate_message(self, value: str) -> str:
-    value = value.strip()
-    if not value:
-      raise serializers.ValidationError("Message cannot be empty.")
-    if len(value) > 255:
-      raise serializers.ValidationError("Message is too long.")
     return strip_tags(value)
 
   def validate_phoneNumber(self, value: str) -> str:
@@ -32,6 +24,14 @@ class ContactSerializer(serializers.ModelSerializer):
       raise serializers.ValidationError("Phone number is too long.")
     return strip_tags(value)
   
+  def validate_message(self, value: str) -> str:
+    value = value.strip()
+    if not value:
+      raise serializers.ValidationError("Message cannot be empty.")
+    if len(value) > 255:
+      raise serializers.ValidationError("Message is too long.")
+    return strip_tags(value)
+
   def create(self, validated_data: dict) -> Contact:
     return Contact.objects.create(**validated_data)
 

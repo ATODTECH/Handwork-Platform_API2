@@ -34,10 +34,12 @@ class ContactUsView(APIView):
   def post(self, req):
     """Stores general contact user's info"""
     if (req.headers.get('Authorization') == secret):
+      print(req.data.get("phoneNumber"))
       serializer = ContactSerializer(data=req.data, partial=True)
       if not serializer.is_valid():
         return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
-      serializer.save()
+      # serializer.save()
+      print(serializer.validated_data)
       return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
     return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
   
