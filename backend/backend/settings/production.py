@@ -8,13 +8,14 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY')
+
 API_KEY = os.getenv('API_KEY')
 
-DEBUG = os.getenv('DJANGO_DEBUG') == 'True'
+DEBUG: bool = os.getenv('DEBUG', False)
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS: list = os.getenv('ALLOWED_HOSTS').split(",")
 
-SECURE_SSL_REDIRECT = os.getenv('DJANGO_DEBUG') != 'True'
+SECURE_SSL_REDIRECT = True
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', "https")
 
@@ -54,9 +55,9 @@ ROOT_URLCONF = 'backend.urls'
 
 CORS_ALLOW_CREDENTIALS = True
 
-CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+CORS_ALLOWED_ORIGINS: list = os.getenv('CORS_ALLOWED_ORIGINS').split(",")
 
-CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
+CSRF_TRUSTED_ORIGINS: list = os.getenv('CSRF_TRUSTED_ORIGINS').split(",")
 
 TEMPLATES = [
     {
@@ -79,7 +80,7 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 
 # Database
 DATABASES = {
-    'default': dj_database_url.config(default=os.environ.get('DATABASE_URL'), conn_max_age=600, ssl_require=True)
+    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'), conn_max_age=600, ssl_require=True)
 }
 CONN_MAX_AGE = 600
 CONN_HEALTH_CHECKS = True
@@ -102,7 +103,7 @@ CONN_HEALTH_CHECKS = True
 
 # Session
 SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
-SESSION_COOKIE_NAME = 'sessionspro'
+SESSION_COOKIE_NAME = 'sessionshd'
 SESSION_COOKIE_AGE = 2419200 # 28 days
 SESSION_COOKIE_SECURE = True
 SESSION_SAVE_EVERY_REQUEST = True
@@ -128,6 +129,13 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
+# password hasher
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+]
+JOSE_SECRET_KEY = os.getenv('SECRET_KEY')
+JOSE_ALGORITHM = os.getenv('JOSE_ALGORITHM')
+
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
@@ -144,19 +152,30 @@ STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 
+# stop DRF rendering in production
+REST_FRAMEWORK = {
+  'DEFAULT_RENDERER_CLASSES': [
+    'rest_framework.renderers.JSONRenderer',
+  ],
+}
+
+
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+
 # Storage of staticfiles
 STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
     'staticfiles': {
-        'BACKEND': "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },
 }
 
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
+# Email
 MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',

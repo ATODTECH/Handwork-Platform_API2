@@ -5,6 +5,6 @@ from django.contrib import admin
 from django.urls import path, include
 
 urlpatterns = [
-    path('admin/atod-tech/prohandy/', admin.site.urls),
-    path('contact/', include('contact.urls')),
+    path('admin/atod-tech/handworkexpert/', admin.site.urls),
+    path('v2/contact/', include('contact.urls')),
 ]
