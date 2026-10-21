@@ -1,11 +1,9 @@
-from os import getenv
-from jose import jwt, JWTError
-from dotenv import load_dotenv
 import datetime
+
+import jwt
+from django.conf import settings
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-
-load_dotenv()
 
 
 def createSession(payload: dict, expireAt: int = 2419200) -> str:
@@ -13,26 +11,23 @@ def createSession(payload: dict, expireAt: int = 2419200) -> str:
   expiration = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=expireAt)
   payload_with_exp = payload.copy()
   payload_with_exp['exp'] = expiration
-  token = jwt.encode(payload_with_exp, getenv('SECRET_KEY'), algorithm=getenv('JOSE_ALGORITHM'))
+  token = jwt.encode(payload_with_exp, settings.SECRET_KEY, algorithm=settings.JOSE_ALGORITHM)
   return token
 
 def verifySession(token: str) -> dict:
   """Verify session/cookies"""
-  try:
-    if token == None:
-      return {
-        'isAuth': False,
-        '_userHID': 0,
-      }
-
-    payload = jwt.decode(token, getenv('SECRET_KEY'), algorithms=[getenv('JOSE_ALGORITHM')])
-    data = payload.get('_userHID') 
+  if token == None:
     return {
-      'isAuth': True,
-      '_userHID': data,
+      'isAuth': False,
+      '_userHID': 0,
     }
-  except JWTError as e:
-    raise e
+
+  payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JOSE_ALGORITHM])
+  data = payload.get('_userHID')
+  return {
+    'isAuth': True,
+    '_userHID': data,
+  }
 
 
 # Initialize the hasher with secure, built-in defaults

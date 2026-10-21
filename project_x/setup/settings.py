@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'chat',
+    'contact',
 ]
 
 MIDDLEWARE = [
@@ -159,6 +160,10 @@ CORS_ALLOW_METHODS = [
     'POST',
     'PUT',
 ]
+
+# Shared key the website sends in the Authorization header (contact app)
+API_KEY = env('API_KEY', default='')
+JOSE_ALGORITHM = env('JOSE_ALGORITHM', default='HS256')
 
 # Replace the hardcoded keys with:
 PAYSTACK_SECRET_KEY = env('PAYSTACK_SECRET_KEY')

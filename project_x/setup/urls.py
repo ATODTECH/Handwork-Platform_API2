@@ -54,5 +54,7 @@ urlpatterns = [
     path("api/forgot-password/verify-otp", ForgotPasswordVerifyOTP.as_view(), name='forgot-password-verify-otp'),
     path('api/delete-account', delete_account, name='delete_account'),
 
+    path('v2/contact/', include('contact.urls')),
+
     path("api/", include(router.urls)),
 ]
