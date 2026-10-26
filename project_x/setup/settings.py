@@ -135,6 +135,8 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
             "hosts": [env('REDIS_URL')],
+            # the Redis instance is shared with other projects; keep our keys apart
+            "prefix": "handwork",
         },
     },
 }
@@ -148,9 +150,12 @@ CHANNEL_LAYERS = {
 # CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = True
 
-CSRF_TRUSTED_ORIGINS = [
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[
     "https://atodapi.up.railway.app",
-]
+])
+
+# Railway terminates TLS at its proxy; trust its header so request.is_secure() is right
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 CORS_ALLOW_METHODS = [
     'DELETE',

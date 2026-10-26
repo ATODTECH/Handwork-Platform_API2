@@ -14,4 +14,5 @@ ENV PYTHONPATH="/app"
 
 # Run Gunicorn with the correct import path
 # CMD ["gunicorn", "-b", "0.0.0.0:8000", "setup.wsgi"]
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "setup.asgi:application"]
+# Railway injects PORT; fall back to 8000 locally
+CMD ["sh", "-c", "daphne -b 0.0.0.0 -p ${PORT:-8000} --proxy-headers setup.asgi:application"]
