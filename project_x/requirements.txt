@@ -20,7 +20,6 @@ django-cors-headers==4.3.1
 django-environ==0.11.2
 djangorestframework==3.15.1
 djangorestframework-simplejwt==5.3.1
-environ==1.0
 gunicorn==21.2.0
 hyperlink==21.0.0
 idna==3.11
@@ -37,7 +36,6 @@ pyasn1_modules==0.4.2
 pycparser==3.0
 PyJWT==2.8.0
 pyOpenSSL==25.3.0
-python-environ==0.4.54
 redis==7.1.0
 requests==2.32.5
 service-identity==24.2.0
