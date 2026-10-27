@@ -29,8 +29,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'cloudinary',
-    'cloudinary_storage',
     'channels',
     'main',
     'services',
@@ -78,29 +76,32 @@ REST_FRAMEWORK = {
     },
 }
 
-# Storage Configuration
+# Storage Configuration: DigitalOcean Spaces (see main/storage.py); same variables as the other ATOD projects
+SPACES_KEY = env('SPACES_KEY', default='')
+SPACES_SECRET = env('SPACES_SECRET', default='')
+SPACES_BUCKET = env('SPACES_BUCKET', default='')
+# `or`: a blank variable in .env must still fall back to the default
+SPACES_REGION = env('SPACES_REGION', default='') or 'lon1'
+SPACES_ENDPOINT = env('SPACES_ENDPOINT', default='') or f'https://{SPACES_REGION}.digitaloceanspaces.com'
+# Every file lives under this prefix, so projects sharing the bucket never mix files
+SPACES_PREFIX = (env('SPACES_PREFIX', default='') or 'handwork-expert/').strip('/')
+# Lifetime of signed URLs for private files (ID documents)
+PRIVATE_MEDIA_URL_EXPIRE = 15 * 60
+
 STORAGES = {
     'default': {
-        'BACKEND': 'cloudinary_storage.storage.MediaCloudinaryStorage',
-        'OPTIONS': {
-            'cloud_name': env('CLOUDINARY_CLOUD_NAME'),
-            'api_key': env('CLOUDINARY_API_KEY'),
-            'api_secret': env('CLOUDINARY_API_SECRET'),
-            'folder': 'artisan',
-        },
+        'BACKEND': 'main.storage.PublicSpacesStorage',
     },
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },
 }
 
-# Cloudinary Configuration
-CLOUDINARY_STORAGE = {
-    'CLOUD_NAME': env('CLOUDINARY_CLOUD_NAME'),
-    'API_KEY': env('CLOUDINARY_API_KEY'),
-    'API_SECRET': env('CLOUDINARY_API_SECRET'),
-    'FOLDER': 'artisan',
-}
+# Blank values pass env() but make every upload fail
+_missing_spaces = [name for name in ('SPACES_KEY', 'SPACES_SECRET', 'SPACES_BUCKET') if not globals()[name].strip()]
+if _missing_spaces:
+    import warnings
+    warnings.warn(f"DigitalOcean Spaces is not configured ({', '.join(_missing_spaces)} empty): file uploads will fail.")
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',

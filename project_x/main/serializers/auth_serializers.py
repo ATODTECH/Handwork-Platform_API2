@@ -9,7 +9,6 @@ import re
 import logging
 import json
 import ast
-import cloudinary.uploader
 from django.core.validators import FileExtensionValidator
 
 logger = logging.getLogger('main')
