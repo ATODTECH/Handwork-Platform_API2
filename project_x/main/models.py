@@ -5,7 +5,7 @@ from django.utils import timezone, translation
 from uuid import uuid4
 from datetime import timedelta
 from decimal import Decimal
-from cloudinary_storage.storage import MediaCloudinaryStorage
+from main.storage import private_media_storage, public_media_storage
 
 # from services.models.services_models import Services
 
@@ -63,7 +63,7 @@ class User(AbstractUser):
         upload_to='profile_images/',
         null=True,
         blank=True,
-        storage=MediaCloudinaryStorage()
+        storage=public_media_storage
     )
     gender = models.CharField(max_length=6, choices=GENDER_CHOICES, null=True)
     address = models.TextField(null=True)
@@ -81,7 +81,8 @@ class User(AbstractUser):
         upload_to='onboarding_docs/',
         null=True,
         blank=True,
-        storage=MediaCloudinaryStorage()
+        # ID documents: private, served through signed URLs only
+        storage=private_media_storage
     )
     document_type = models.CharField(choices=DOCUMENT_TYPE, max_length=16, null=True, blank=True)
     role = models.CharField(max_length=7, choices=ROLE, default="USER")
@@ -122,21 +123,21 @@ class Skill(models.Model):
         upload_to='skill_images/',
         null=True,
         blank=True,
-        storage=MediaCloudinaryStorage()
+        storage=public_media_storage
     )
     image2 = models.ImageField(
         translation.gettext_lazy('skill image 2'),
         upload_to='skill_images/',
         null=True,
         blank=True,
-        storage=MediaCloudinaryStorage()
+        storage=public_media_storage
     )
     image3 = models.ImageField(
         translation.gettext_lazy('skill image 3'),
         upload_to='skill_images/',
         null=True,
         blank=True,
-        storage=MediaCloudinaryStorage()
+        storage=public_media_storage
     )
     
     def __str__(self):
