@@ -12,3 +12,24 @@ class IsUserPermission(permissions.BasePermission):
     
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and request.user.role == 'USER')
+
+class IsSelfOrStaff(permissions.BasePermission):
+    """Object-level: a user may only read or change their own account (staff may manage any)."""
+    message = 'You can only access your own account'
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        return obj == request.user or request.user.is_staff
+
+
+class IsRatingAuthor(permissions.BasePermission):
+    """Object-level: only the customer who wrote a rating may change or delete it."""
+    message = 'You can only change your own ratings'
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        return obj.client_id == request.user.pk

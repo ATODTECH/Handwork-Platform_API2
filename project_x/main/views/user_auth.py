@@ -6,12 +6,12 @@ from rest_framework import viewsets, permissions, response, status
 from rest_framework.viewsets import ViewSet
 from rest_framework.views import APIView
 from main.models import Notification, User, Skill, BankDetails, Rating
-from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer, RatingSerializers, NotificationSerializer)
-from main.permissions import IsArtisanPermission
+from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, PublicArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer, RatingSerializers, NotificationSerializer)
+from main.permissions import IsArtisanPermission, IsRatingAuthor, IsSelfOrStaff, IsUserPermission
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import serializers
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from django.db import IntegrityError
 from django.db.models import Q
 from django.core.cache import cache
@@ -25,8 +25,19 @@ logger = logging.getLogger('main')
 
 
 class SignUpUserView(viewsets.ModelViewSet):
+    """Customer sign-up, plus each account's own profile (an artisan may also read/edit theirs here)."""
     queryset = User.objects.all()
     serializer_class = UserSerializer
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [AllowAny()]
+        if self.action == "list":
+            return [IsAdminUser()]
+        return [IsSelfOrStaff()]
+
+    def perform_create(self, serializer):
+        serializer.save(role="USER")
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -225,8 +236,28 @@ class SignInUserView(TokenObtainPairView):
 
 
 class SignUpArtisanViewSet(viewsets.ModelViewSet):
+    """
+    Artisan sign-up and profiles. Anyone may browse artisans, but only the public profile;
+    the full record (contact details, ID numbers, documents) is for the artisan themselves.
+    """
     queryset = User.objects.filter(role="ARTISAN")
-    serializer_class = ArtisanSerializer
+
+    def get_permissions(self):
+        if self.action in ("create", "list", "retrieve"):
+            return [AllowAny()]
+        return [IsSelfOrStaff()]
+
+    def get_serializer_class(self):
+        return PublicArtisanSerializer if self.action == "list" else ArtisanSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(role="ARTISAN")
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        is_owner = request.user.is_authenticated and (request.user == instance or request.user.is_staff)
+        serializer_class = ArtisanSerializer if is_owner else PublicArtisanSerializer
+        return response.Response(serializer_class(instance, context=self.get_serializer_context()).data)
 
 
 class SkillViewSet(ViewSet):
@@ -264,7 +295,8 @@ class BankDetailViewSet(ViewSet):
     permission_classes = [IsArtisanPermission]
 
     def get_queryset(self):
-        return BankDetails.objects.select_related("artisan")
+        # An artisan only ever sees or changes their own bank details
+        return BankDetails.objects.select_related("artisan").filter(artisan=self.request.user)
 
     def create(self, request):
         serializer = BankDetailSerializer(data=request.data, context={'request': request})
@@ -309,11 +341,19 @@ class BankDetailViewSet(ViewSet):
 
 
 class RatingViewSet(viewsets.ModelViewSet):
+    """Anyone may read ratings; only customers may leave one, always as themselves."""
     queryset = Rating.objects.select_related("artisan", "client")
     serializer_class = RatingSerializers
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [AllowAny()]
+        if self.action == "create":
+            return [IsUserPermission()]
+        return [IsRatingAuthor()]
+
     def perform_create(self, serializer):
-        rating = serializer.save()
+        rating = serializer.save(client=self.request.user)
         Notification.objects.create(
             recipient=rating.artisan,
             message=f"You received a {rating.star}-star rating from {rating.client.first_name}.",
@@ -362,7 +402,8 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
 
 class LogsView(APIView):
-    permission_classes = []
+    # Server logs hold emails and account numbers: staff only
+    permission_classes = [IsAdminUser]
 
     def get(self, request):
         log_file_path = os.path.join(Path(__file__).resolve().parent.parent, '../logs', 'user_artisan.log')
@@ -414,8 +455,8 @@ def get_my_ratings(request, pk):
 # from rest_framework.viewsets import ModelViewSet, ViewSet
 # from rest_framework.views import APIView
 # from main.models import Notification, User, Skill, BankDetails, Rating
-# from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer, RatingSerializers, NotificationSerializer)
-# from main.permissions import IsArtisanPermission
+# from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, PublicArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer, RatingSerializers, NotificationSerializer)
+# from main.permissions import IsArtisanPermission, IsRatingAuthor, IsSelfOrStaff, IsUserPermission
 # from rest_framework_simplejwt.views import TokenObtainPairView
 # from rest_framework import serializers
 # from rest_framework.decorators import action, api_view

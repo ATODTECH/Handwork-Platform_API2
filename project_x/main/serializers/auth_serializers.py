@@ -24,9 +24,21 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('id', 'first_name', 'last_name', 'email', 'password', 'contact',
                   'profile_image', 'gender', 'address', 'state', 'city', 'country',
                   'longitude', 'latitude', 'role', 'onboardingComplete')
+        # The sign-up endpoint decides the role; it can never be changed through the API
+        read_only_fields = ('role',)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.instance is not None:
+            # Profile updates can't change the password (that goes through the reset flow)
+            fields.pop('password', None)
+        return fields
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        others = User.objects.filter(email=value)
+        if self.instance is not None:
+            others = others.exclude(pk=self.instance.pk)
+        if others.exists():
             raise serializers.ValidationError("This email is already registered.")
         return value
 
@@ -119,7 +131,7 @@ class SkillSerializer(serializers.ModelSerializer):
 
 
 class BankDetailSerializer(serializers.ModelSerializer):
-    artisan = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    artisan = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
         model = BankDetails
@@ -133,31 +145,36 @@ class BankDetailSerializer(serializers.ModelSerializer):
 
 
 class ArtisanSerializer(serializers.ModelSerializer):
+    """The artisan's full record: only for the artisan themselves (and staff)."""
     onboardingComplete = serializers.BooleanField(read_only=True)
     isAvailable = serializers.BooleanField(read_only=True)
+    password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = User
         fields = ("id", "first_name", "last_name", "email", "contact", 'profile_image',
                   "state", "city", "nin", "bvn", "document", "address", "document_type",
                   "longitude", "latitude", "role", "onboardingComplete", "password", "isAvailable")
+        # The sign-up endpoint decides the role; it can never be changed through the API
+        read_only_fields = ("role",)
 
-    extra_kwargs = {
-        'nin': {'required': False},
-        'profile_image': {'required': False},
-        'bvn': {'required': False},
-        'document': {'required': False},
-        'document_type': {'required': False},
-        'role': {'required': False},
-        'state': {'required': False},
-        'onboardingComplete': {'required': False},
-        'isAvailable': {'required': False}
-    }
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.instance is not None:
+            # Profile updates can't change the password (that goes through the reset flow)
+            fields.pop("password", None)
+        return fields
 
     def validate(self, attrs):
         email = attrs.get("email")
-        if User.objects.filter(email=email).exists():
-            raise serializers.ValidationError({"error": "Sorry this email is taken!"})
+        if email:
+            others = User.objects.filter(email=email)
+            if self.instance is not None:
+                others = others.exclude(pk=self.instance.pk)
+            if others.exists():
+                raise serializers.ValidationError({"error": "Sorry this email is taken!"})
+        if self.instance is None and not attrs.get("password"):
+            raise serializers.ValidationError({"password": "This field is required."})
         return attrs
 
     def create(self, validated_data):
@@ -190,6 +207,15 @@ class ArtisanSerializer(serializers.ModelSerializer):
         if rating is None:
             return None
         return RatingSerializers(rating).data
+
+
+class PublicArtisanSerializer(ArtisanSerializer):
+    """What anyone browsing artisans may see: no contact details, ID numbers, documents or address."""
+
+    class Meta(ArtisanSerializer.Meta):
+        fields = ("id", "first_name", "last_name", "profile_image", "state", "city",
+                  "longitude", "latitude", "role", "isAvailable")
+        read_only_fields = fields
 
 
 class OnboardingLevelSerializer(serializers.ModelSerializer):
@@ -237,6 +263,8 @@ class RatingSerializers(serializers.ModelSerializer):
     class Meta:
         model = Rating
         fields = ("id", "client", "artisan", "star", "message")
+        # The author is the signed-in customer, never taken from the request body
+        read_only_fields = ("client",)
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
