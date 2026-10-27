@@ -18,6 +18,12 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
             'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status',
         )
 
+    def validate_artisan(self, artisan):
+        # Only artisans staff have approved can take bookings
+        if artisan and artisan.verification_status != "APPROVED":
+            raise serializers.ValidationError("This artisan isn't available for bookings yet.")
+        return artisan
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"

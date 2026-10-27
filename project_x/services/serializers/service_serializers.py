@@ -22,7 +22,10 @@ class ServiceSerializers(serializers.ModelSerializer):
 
     def get_related_artisans(self, instance):
         # Prefetch related skills and ratings to reduce the number of queries
-        skills_with_artisans = Skill.objects.filter(services=instance).select_related(
+        # Only artisans staff have approved are offered to customers
+        skills_with_artisans = Skill.objects.filter(
+            services=instance, artisan__verification_status="APPROVED"
+        ).select_related(
             'artisan'
         ).prefetch_related(
             'services'

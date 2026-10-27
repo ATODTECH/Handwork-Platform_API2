@@ -96,6 +96,18 @@ class User(AbstractUser):
 
     isAvailable = models.BooleanField(default=True)
 
+    # Artisans are reviewed by staff before customers can find or book them
+    VERIFICATION_STATUS = (
+        ("PENDING", "Pending review"),
+        ("APPROVED", "Approved"),
+        ("REJECTED", "Rejected"),
+    )
+    verification_status = models.CharField(max_length=10, choices=VERIFICATION_STATUS, default="PENDING")
+    # Why the artisan was rejected; shown to them so they can fix it
+    verification_note = models.TextField(blank=True, default="")
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
@@ -191,6 +203,7 @@ class Notification(models.Model):
         ('BANK_DETAILS', 'Bank Details'),
         ('AVAILABILITY', 'Availability'),
         ('PROFILE_UPDATE', 'Profile Update'),
+        ('VERIFICATION', 'Verification'),
     )
     
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')

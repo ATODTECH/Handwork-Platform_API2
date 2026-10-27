@@ -1,6 +1,9 @@
 from rest_framework.test import APITestCase
 
-from main.models import BankDetails, Rating, User
+from rest_framework import serializers as drf_serializers
+
+from main.models import BankDetails, Notification, Rating, User
+from services.serializers.job_serializers import ArtisanBookingSerializers
 
 PRIVATE_ARTISAN_FIELDS = {"email", "contact", "nin", "bvn", "document", "document_type", "address", "password"}
 
@@ -28,7 +31,9 @@ class ApiTestCase(APITestCase):
 
 class ArtisanEndpointTests(ApiTestCase):
     def setUp(self):
-        self.artisan = make_user("ada@example.com", role="ARTISAN", nin="12345678901", bvn="10987654321")
+        self.artisan = make_user(
+            "ada@example.com", role="ARTISAN", nin="12345678901", bvn="10987654321", verification_status="APPROVED"
+        )
         self.other_artisan = make_user("bola@example.com", role="ARTISAN")
         self.customer = make_user("chi@example.com")
 
@@ -209,3 +214,85 @@ class RatingAndLogsTests(ApiTestCase):
         self.assertEqual(self.client.get("/api/logs/").status_code, 401)
         self.client.force_authenticate(self.customer)
         self.assertEqual(self.client.get("/api/logs/").status_code, 403)
+
+
+class ArtisanVerificationTests(ApiTestCase):
+    def setUp(self):
+        self.staff = make_user("staff@example.com", is_staff=True)
+        self.customer = make_user("chi@example.com")
+        self.pending = make_user("ada@example.com", role="ARTISAN", nin="12345678901", onboardingComplete=True)
+        self.incomplete = make_user("bola@example.com", role="ARTISAN")
+        self.approved = make_user("eze@example.com", role="ARTISAN", onboardingComplete=True, verification_status="APPROVED")
+
+    def review(self, artisan, decision, **data):
+        return self.client.post(f"/api/admin/artisans/{artisan.id}/{decision}", data)
+
+    def test_review_endpoints_are_staff_only(self):
+        self.assertEqual(self.client.get("/api/admin/artisans").status_code, 401)
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(self.client.get("/api/admin/artisans").status_code, 403)
+        self.assertEqual(self.review(self.pending, "approve").status_code, 403)
+
+    def test_lists_and_counts_by_status(self):
+        self.client.force_authenticate(self.staff)
+        pending = self.data(self.client.get("/api/admin/artisans?status=pending"))
+        self.assertEqual([artisan["id"] for artisan in pending], [str(self.pending.id)])
+        self.assertEqual(pending[0]["nin"], "12345678901")
+        counts = self.data(self.client.get("/api/admin/artisans/counts"))
+        self.assertEqual(counts, {"incomplete": 1, "pending": 1, "approved": 1, "rejected": 0})
+
+    def test_approve(self):
+        self.client.force_authenticate(self.staff)
+        response = self.review(self.pending, "approve")
+        self.assertEqual(response.status_code, 200)
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.verification_status, "APPROVED")
+        self.assertEqual(self.pending.verified_by, self.staff)
+        self.assertTrue(Notification.objects.filter(recipient=self.pending, notification_type="VERIFICATION").exists())
+
+    def test_cannot_approve_before_onboarding_is_finished(self):
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.review(self.incomplete, "approve").status_code, 400)
+
+    def test_reject_needs_a_reason_and_resubmitting_returns_to_review(self):
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.review(self.pending, "reject").status_code, 400)
+        self.assertEqual(self.review(self.pending, "reject", reason="The ID photo is blurry.").status_code, 200)
+        self.pending.refresh_from_db()
+        self.assertEqual((self.pending.verification_status, self.pending.verification_note), ("REJECTED", "The ID photo is blurry."))
+
+        self.client.force_authenticate(self.pending)
+        own = self.data(self.client.get(f"/api/artisan/{self.pending.id}"))
+        self.assertEqual(own["verification_note"], "The ID photo is blurry.")
+        self.client.patch(f"/api/artisan/{self.pending.id}", {"nin": "22222222222"})
+        self.pending.refresh_from_db()
+        self.assertEqual((self.pending.verification_status, self.pending.verification_note), ("PENDING", ""))
+
+    def test_artisans_cannot_approve_themselves(self):
+        self.client.force_authenticate(self.pending)
+        self.client.patch(f"/api/artisan/{self.pending.id}", {"verification_status": "APPROVED"})
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.verification_status, "PENDING")
+
+    def test_customers_only_see_approved_artisans(self):
+        ids = [artisan["id"] for artisan in self.data(self.client.get("/api/artisan"))]
+        self.assertEqual(ids, [str(self.approved.id)])
+        self.assertEqual(self.client.get(f"/api/artisan/{self.pending.id}").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/artisan/{self.approved.id}").status_code, 200)
+
+    def test_unapproved_artisans_cannot_be_booked(self):
+        serializer = ArtisanBookingSerializers()
+        with self.assertRaises(drf_serializers.ValidationError):
+            serializer.validate_artisan(self.pending)
+        self.assertEqual(serializer.validate_artisan(self.approved), self.approved)
+
+    def test_sign_in_reports_staff(self):
+        response = self.client.post("/signin/client", {"email": "staff@example.com", "password": "Secret#123"})
+        self.assertTrue(self.data(response)["is_staff"])
+
+    def test_catalogue_is_read_only_for_non_staff(self):
+        self.assertEqual(self.client.get("/api/category").status_code, 200)
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(self.client.post("/api/category", {"name": "Spam"}).status_code, 403)
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.post("/api/category", {"name": "Cleaning"}).status_code, 201)
