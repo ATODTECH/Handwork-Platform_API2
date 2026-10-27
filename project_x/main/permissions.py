@@ -33,3 +33,12 @@ class IsRatingAuthor(permissions.BasePermission):
 
     def has_object_permission(self, request, view, obj):
         return obj.client_id == request.user.pk
+
+
+class IsStaffOrReadOnly(permissions.BasePermission):
+    """Anyone may read; only staff may create, change or delete."""
+
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_staff)

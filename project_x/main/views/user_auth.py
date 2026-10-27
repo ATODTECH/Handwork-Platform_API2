@@ -17,6 +17,7 @@ from django.db.models import Q
 from django.core.cache import cache
 import re
 from django.shortcuts import get_object_or_404
+from django.http import Http404
 from django.core.mail import send_mail
 from django.conf import settings
 from pathlib import Path
@@ -242,6 +243,11 @@ class SignUpArtisanViewSet(viewsets.ModelViewSet):
     """
     queryset = User.objects.filter(role="ARTISAN")
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Customers only ever find artisans staff have approved
+        return queryset.filter(verification_status="APPROVED") if self.action == "list" else queryset
+
     def get_permissions(self):
         if self.action in ("create", "list", "retrieve"):
             return [AllowAny()]
@@ -256,6 +262,8 @@ class SignUpArtisanViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         is_owner = request.user.is_authenticated and (request.user == instance or request.user.is_staff)
+        if not is_owner and instance.verification_status != "APPROVED":
+            raise Http404
         serializer_class = ArtisanSerializer if is_owner else PublicArtisanSerializer
         return response.Response(serializer_class(instance, context=self.get_serializer_context()).data)
 

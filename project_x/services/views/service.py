@@ -2,6 +2,7 @@ from rest_framework.viewsets import ModelViewSet, ViewSet
 from rest_framework import response, status, views
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
+from main.permissions import IsStaffOrReadOnly
 from . import (
     # Serializers
     ServiceSerializers,
@@ -18,6 +19,7 @@ from . import (
 class ServiceViewSet(ModelViewSet):
     queryset = Services.objects.select_related("client")
     serializer_class = ServiceSerializers
+    permission_classes = [IsStaffOrReadOnly]
 
 
 
@@ -47,6 +49,7 @@ class ServiceSearchViewSet(ViewSet):
 class CategoryViewSet(ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializers
+    permission_classes = [IsStaffOrReadOnly]
 
 
 

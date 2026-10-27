@@ -153,9 +153,10 @@ class ArtisanSerializer(serializers.ModelSerializer):
         model = User
         fields = ("id", "first_name", "last_name", "email", "contact", 'profile_image',
                   "state", "city", "nin", "bvn", "document", "address", "document_type",
-                  "longitude", "latitude", "role", "onboardingComplete", "password", "isAvailable")
-        # The sign-up endpoint decides the role; it can never be changed through the API
-        read_only_fields = ("role",)
+                  "longitude", "latitude", "role", "onboardingComplete", "password", "isAvailable",
+                  "verification_status", "verification_note")
+        # The sign-up endpoint decides the role, and only staff decide verification
+        read_only_fields = ("role", "verification_status", "verification_note")
 
     def get_fields(self):
         fields = super().get_fields()
@@ -175,6 +176,20 @@ class ArtisanSerializer(serializers.ModelSerializer):
         if self.instance is None and not attrs.get("password"):
             raise serializers.ValidationError({"password": "This field is required."})
         return attrs
+
+    # Changing these after a rejection sends the artisan back for review
+    REVIEWED_FIELDS = ("nin", "document", "document_type")
+
+    def update(self, instance, validated_data):
+        resubmitted = instance.verification_status == "REJECTED" and any(
+            field in validated_data for field in self.REVIEWED_FIELDS
+        )
+        instance = super().update(instance, validated_data)
+        if resubmitted:
+            instance.verification_status = "PENDING"
+            instance.verification_note = ""
+            instance.save(update_fields=["verification_status", "verification_note"])
+        return instance
 
     def create(self, validated_data):
         password = validated_data.pop("password", None)
@@ -242,6 +257,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             "access": str(refresh.access_token),
             "name": f"{self.user.first_name} {self.user.last_name}",
             "role": self.user.role,
+            "is_staff": self.user.is_staff,
             "longitude": self.user.longitude,
             "latitude": self.user.latitude,
             "onboardingComplete": self.user.onboardingComplete,

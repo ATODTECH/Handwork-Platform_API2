@@ -9,6 +9,7 @@ from main.views.user_auth import (
     get_my_ratings, NotificationViewSet, LogsView,
     ForgotPasswordRequestOTP, ForgotPasswordVerifyOTP
 )
+from main.views.admin_artisans import AdminArtisanViewSet
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -30,6 +31,7 @@ router.register("book/artisan", BookArtisanViewSet, basename='book-artisan')
 router.register("my_bookings/filter", MyFilteredBookings, basename='filtered-bookings')
 router.register("notifications", NotificationViewSet, basename='notifications')
 router.register("material_quotes", MaterialQuoteViewSet, basename='material-quote')
+router.register("admin/artisans", AdminArtisanViewSet, basename="admin-artisans")
 
 urlpatterns = [
     path('', health_check, name='health-check'),
