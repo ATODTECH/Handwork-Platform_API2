@@ -47,9 +47,13 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
         return BookArtisan.objects.none()
 
     def create(self, request, *args, **kwargs):
+        if not request.user.is_authenticated or request.user.role != 'USER':
+            return response.Response(
+                {"detail": "Only customers can book artisans."}, status=status.HTTP_403_FORBIDDEN
+            )
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            booking = serializer.save()
+            booking = serializer.save(client=request.user)
             Notification.objects.create(
                 recipient=booking.client,
                 message=f"Your booking for {', '.join(service.name for service in booking.services.all())} has been created and is pending.",

@@ -2,7 +2,8 @@ from rest_framework.test import APITestCase
 
 from rest_framework import serializers as drf_serializers
 
-from main.models import BankDetails, Notification, Rating, User
+from main.models import BankDetails, Notification, Rating, Skill, User
+from services.models.services_models import Services
 from services.serializers.job_serializers import ArtisanBookingSerializers
 
 PRIVATE_ARTISAN_FIELDS = {"email", "contact", "nin", "bvn", "document", "document_type", "address", "password"}
@@ -210,11 +211,6 @@ class RatingAndLogsTests(ApiTestCase):
     def test_ratings_are_public_to_read(self):
         self.assertEqual(self.client.get("/api/artisan_rating").status_code, 200)
 
-    def test_logs_need_staff(self):
-        self.assertEqual(self.client.get("/api/logs/").status_code, 401)
-        self.client.force_authenticate(self.customer)
-        self.assertEqual(self.client.get("/api/logs/").status_code, 403)
-
 
 class ArtisanVerificationTests(ApiTestCase):
     def setUp(self):
@@ -304,3 +300,45 @@ class ArtisanVerificationTests(ApiTestCase):
         self.assertEqual(self.client.post("/api/category", {"name": "Spam"}).status_code, 403)
         self.client.force_authenticate(self.staff)
         self.assertEqual(self.client.post("/api/category", {"name": "Cleaning"}).status_code, 201)
+
+
+class BookingTests(ApiTestCase):
+    def setUp(self):
+        self.customer = make_user("chi@example.com")
+        self.other_customer = make_user("femi@example.com")
+        self.artisan = make_user("ada@example.com", role="ARTISAN", onboardingComplete=True, verification_status="APPROVED")
+        self.plumbing = Services.objects.create(name="Plumbing", description="Pipes")
+        self.tailoring = Services.objects.create(name="Tailoring", description="Clothes")
+        skill = Skill.objects.create(
+            artisan=self.artisan, description="Leaks and installs", base_charge=5000, cap_charge=20000, weekdays_and_weekends=True
+        )
+        skill.services.set([self.plumbing])
+
+    def book(self, **overrides):
+        return self.client.post("/api/book/artisan", {
+            "artisan": str(self.artisan.id),
+            "services": [self.plumbing.id],
+            "description": "Kitchen sink is leaking",
+            "budget": "15000",
+            "address": "3 Fadeyi Street, Yaba",
+            "scheduled_date": "2026-11-02",
+            "scheduled_time": "10:00",
+            **overrides,
+        }, format="json")
+
+    def test_the_customer_is_whoever_is_signed_in(self):
+        self.client.force_authenticate(self.customer)
+        response = self.book(client=str(self.other_customer.id))
+        self.assertEqual(response.status_code, 201)
+        booking = self.customer.job_owner.get()
+        self.assertEqual((booking.client, booking.artisan, booking.status), (self.customer, self.artisan, "Pending"))
+        self.assertFalse(self.other_customer.job_owner.exists())
+
+    def test_only_signed_in_customers_can_book(self):
+        self.assertEqual(self.book().status_code, 403)
+        self.client.force_authenticate(self.artisan)
+        self.assertEqual(self.book().status_code, 403)
+
+    def test_services_must_be_ones_the_artisan_offers(self):
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(self.book(services=[self.tailoring.id]).status_code, 400)

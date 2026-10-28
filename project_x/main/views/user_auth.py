@@ -1,5 +1,4 @@
 import logging
-import os
 import random
 import string
 from rest_framework import viewsets, permissions, response, status
@@ -20,7 +19,6 @@ from django.shortcuts import get_object_or_404
 from django.http import Http404
 from django.core.mail import send_mail
 from django.conf import settings
-from pathlib import Path
 
 logger = logging.getLogger('main')
 
@@ -408,33 +406,6 @@ class NotificationViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK
         )
 
-
-class LogsView(APIView):
-    # Server logs hold emails and account numbers: staff only
-    permission_classes = [IsAdminUser]
-
-    def get(self, request):
-        log_file_path = os.path.join(Path(__file__).resolve().parent.parent, '../logs', 'user_artisan.log')
-        try:
-            with open(log_file_path, 'r') as log_file:
-                log_content = log_file.read()
-            return response.Response(
-                {"logs": log_content},
-                status=status.HTTP_200_OK
-            )
-        except FileNotFoundError:
-            logger.error(f"Log file not found at {log_file_path}")
-            return response.Response(
-                {"error": "Log file not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            logger.error(f"Error reading log file: {str(e)}")
-            return response.Response(
-                {"error": f"Error reading log file: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-        
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])

@@ -6,8 +6,6 @@ from datetime import timedelta
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-LOG_DIR = BASE_DIR / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Load environment variables
 env = environ.Env()
@@ -243,41 +241,31 @@ CACHES = {
     }
 }
 
-# Logging Configuration
+# Logs go to stdout only: Railway collects and keeps them (the container's disk is wiped on every deploy)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
-        },
         'simple': {
             'format': '{levelname} {message}',
             'style': '{',
         },
     },
     'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': str(LOG_DIR / 'user_artisan.log'),
-            'formatter': 'verbose',
-        },
         'console': {
-            'level': 'DEBUG',
+            'level': 'INFO',
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
     },
     'loggers': {
         'main': {
-            'handlers': ['file', 'console'],
+            'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': True,
         },
         'services': {
-            'handlers': ['file', 'console'],
+            'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': True,
         },

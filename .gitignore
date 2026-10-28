@@ -33,3 +33,7 @@ pip-debug.log*
 __pycache__
 db.sqlite3
 draft.txt
+
+# Server logs (production logs to stdout; Railway keeps them)
+logs/
+*.log
