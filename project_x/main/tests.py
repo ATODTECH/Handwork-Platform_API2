@@ -220,7 +220,9 @@ class ArtisanVerificationTests(ApiTestCase):
     def setUp(self):
         self.staff = make_user("staff@example.com", is_staff=True)
         self.customer = make_user("chi@example.com")
-        self.pending = make_user("ada@example.com", role="ARTISAN", nin="12345678901", onboardingComplete=True)
+        self.pending = make_user(
+            "ada@example.com", role="ARTISAN", nin="12345678901", onboardingComplete=True, state="Lagos", city="Ikeja"
+        )
         self.incomplete = make_user("bola@example.com", role="ARTISAN")
         self.approved = make_user("eze@example.com", role="ARTISAN", onboardingComplete=True, verification_status="APPROVED")
 
@@ -253,6 +255,12 @@ class ArtisanVerificationTests(ApiTestCase):
     def test_cannot_approve_before_onboarding_is_finished(self):
         self.client.force_authenticate(self.staff)
         self.assertEqual(self.review(self.incomplete, "approve").status_code, 400)
+
+    def test_cannot_approve_without_a_location(self):
+        self.pending.city = None
+        self.pending.save(update_fields=["city"])
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.review(self.pending, "approve").status_code, 400)
 
     def test_reject_needs_a_reason_and_resubmitting_returns_to_review(self):
         self.client.force_authenticate(self.staff)

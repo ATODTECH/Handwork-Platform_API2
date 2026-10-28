@@ -75,6 +75,10 @@ class AdminArtisanViewSet(viewsets.ReadOnlyModelViewSet):
             return response.Response(
                 {"detail": "This artisan hasn't finished onboarding yet."}, status=status.HTTP_400_BAD_REQUEST
             )
+        if not (artisan.state and artisan.city):
+            return response.Response(
+                {"detail": "This artisan hasn't added their location yet."}, status=status.HTTP_400_BAD_REQUEST
+            )
         result = self._review(artisan, status_value="APPROVED")
         notify_artisan(
             artisan,

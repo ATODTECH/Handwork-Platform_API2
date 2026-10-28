@@ -178,7 +178,7 @@ class ArtisanSerializer(serializers.ModelSerializer):
         return attrs
 
     # Changing these after a rejection sends the artisan back for review
-    REVIEWED_FIELDS = ("nin", "document", "document_type")
+    REVIEWED_FIELDS = ("nin", "document", "document_type", "address", "state", "city")
 
     def update(self, instance, validated_data):
         resubmitted = instance.verification_status == "REJECTED" and any(
