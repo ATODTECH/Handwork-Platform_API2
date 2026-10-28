@@ -6,7 +6,7 @@ from rest_framework import routers
 from main.views.user_auth import (
     SignUpUserView, SignInUserView, SignUpArtisanViewSet,
     SkillViewSet, BankDetailViewSet, ResetPassword, RatingViewSet, delete_account,
-    get_my_ratings, NotificationViewSet, LogsView,
+    get_my_ratings, NotificationViewSet,
     ForgotPasswordRequestOTP, ForgotPasswordVerifyOTP
 )
 from main.views.admin_artisans import AdminArtisanViewSet
@@ -45,7 +45,6 @@ urlpatterns = [
     path('api/my_bookings', get_my_bookings, name='user-bookings'),
     path('api/toggle_availability', toggle_availability, name="toggle-switch"),
     path('api/bookings', get_today_bookings, name="today-bookings"),
-    path('api/logs/', LogsView.as_view(), name='logs'),
     path('api/book/<int:pk>/pay-deposit/', pay_deposit, name='pay-deposit'),
     path('api/book/<int:pk>/pay-balance/', pay_balance, name='pay-balance'),
     path('api/paystack/webhook/', paystack_webhook, name='paystack-webhook'),

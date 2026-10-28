@@ -17,12 +17,22 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         fields = ('id', 'artisan', 'client', 'services', 'description', 'budget', 'agreed_amount', 'created_at', 
             'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status',
         )
+        # The customer is whoever is signed in, never taken from the request body
+        read_only_fields = ('client',)
 
     def validate_artisan(self, artisan):
         # Only artisans staff have approved can take bookings
         if artisan and artisan.verification_status != "APPROVED":
             raise serializers.ValidationError("This artisan isn't available for bookings yet.")
         return artisan
+
+    def validate(self, attrs):
+        artisan, services = attrs.get('artisan'), attrs.get('services')
+        if artisan and services:
+            offered = set(Skill.objects.filter(artisan=artisan).values_list('services', flat=True)) - {None}
+            if offered and not {service.id for service in services} <= offered:
+                raise serializers.ValidationError({"services": "This artisan doesn't offer all of these services."})
+        return attrs
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
