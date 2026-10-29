@@ -360,7 +360,7 @@ class BookingTestCase(ApiTestCase):
             "description": "Kitchen sink is leaking",
             "budget": "15000",
             "address": "3 Fadeyi Street, Yaba",
-            "scheduled_date": "2026-11-02",
+            "scheduled_date": str(timezone.localdate() + timedelta(days=4)),
             "scheduled_time": "10:00",
             **overrides,
         }, format="json")
@@ -509,6 +509,115 @@ class PaymentTests(BookingTestCase):
         old.refresh_from_db()
         recent.refresh_from_db()
         self.assertEqual((old.status, recent.status), ("Released", "Completed"))
+
+
+class BookingLifecycleTests(BookingTestCase):
+    """Cancelling before paying, phone numbers once paid, and problems staff settle"""
+
+    def as_customer(self):
+        self.client.force_authenticate(self.customer)
+
+    def test_past_dates_are_refused(self):
+        self.as_customer()
+        yesterday = str(timezone.localdate() - timedelta(days=1))
+        self.assertEqual(self.book(scheduled_date=yesterday).status_code, 400)
+
+    def test_accepting_tells_the_customer_the_price_against_their_budget(self):
+        booking = self.booking()
+        self.respond(booking, status="Accepted", agreed_amount="20000")
+        message = Notification.objects.filter(recipient=self.customer, notification_type="PAYMENT").latest("id").message
+        self.assertIn("₦20,000", message)
+        self.assertIn("budget was ₦15,000", message)
+        self.assertNotIn("deposit", message)
+
+    def test_customer_can_cancel_or_turn_down_the_price_before_paying(self):
+        for status in ("Pending", "Accepted"):
+            booking = self.booking(status=status, agreed_amount=20000 if status == "Accepted" else None)
+            self.as_customer()
+            response = self.client.post(f"/api/book/{booking.id}/cancel", {"reason": "Too expensive"}, format="json")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(self.data(response)["status"], "Cancelled")
+        self.assertEqual(Notification.objects.filter(recipient=self.artisan, message__contains="declined your price").count(), 1)
+
+    def test_paid_or_other_peoples_bookings_cannot_be_cancelled(self):
+        paid = self.booking(status="Paid", agreed_amount=20000)
+        self.as_customer()
+        self.assertEqual(self.client.post(f"/api/book/{paid.id}/cancel").status_code, 400)
+        pending = self.booking()
+        self.client.force_authenticate(self.other_customer)
+        self.assertEqual(self.client.post(f"/api/book/{pending.id}/cancel").status_code, 404)
+
+    def test_phone_numbers_are_shared_once_paid(self):
+        booking = self.booking(status="Accepted", agreed_amount=20000)
+        self.as_customer()
+        self.assertIsNone(self.data(self.client.get(f"/api/book/artisan/{booking.id}"))["contact"])
+        booking.status = "Paid"
+        booking.save()
+        self.assertEqual(self.data(self.client.get(f"/api/book/artisan/{booking.id}"))["contact"], self.artisan.contact)
+        self.client.force_authenticate(self.artisan)
+        self.assertEqual(self.data(self.client.get(f"/api/book/artisan/{booking.id}"))["contact"], self.customer.contact)
+
+    def test_reporting_a_problem_stops_the_automatic_payout(self):
+        booking = self.booking(status="Completed", agreed_amount=20000, completed_at=timezone.now() - timedelta(hours=49))
+        self.as_customer()
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/report", {"reason": "short"}, format="json").status_code, 400)
+        response = self.client.post(f"/api/book/{booking.id}/report", {"reason": "The sink still leaks"}, format="json")
+        self.assertEqual(self.data(response)["status"], "Disputed")
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/confirm").status_code, 400)
+        call_command("release_completed_bookings", stdout=mock.MagicMock())
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Disputed")
+        self.assertTrue(Notification.objects.filter(recipient=self.artisan, message__contains="reported a problem").exists())
+
+    def test_problems_cannot_be_reported_before_paying(self):
+        booking = self.booking(status="Accepted", agreed_amount=20000)
+        self.as_customer()
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/report", {"reason": "The sink still leaks"}, format="json").status_code, 400)
+
+    def disputed(self, **extra):
+        return self.booking(status="Disputed", agreed_amount=20000, dispute_reason="Still leaks", **extra)
+
+    def test_bookings_admin_is_staff_only(self):
+        self.as_customer()
+        self.assertEqual(self.client.get("/api/admin/bookings").status_code, 403)
+
+    def test_staff_list_and_count_bookings(self):
+        self.disputed()
+        self.booking()
+        self.client.force_authenticate(make_user("staff@example.com", is_staff=True))
+        self.assertEqual(len(self.data(self.client.get("/api/admin/bookings?status=disputed"))), 1)
+        counts = self.data(self.client.get("/api/admin/bookings/counts"))
+        self.assertEqual((counts["all"], counts["disputed"], counts["requested"]), (2, 1, 1))
+
+    def test_staff_settle_a_problem_by_paying_the_artisan(self):
+        booking = self.disputed()
+        self.client.force_authenticate(make_user("staff@example.com", is_staff=True))
+        self.assertEqual(self.client.post(f"/api/admin/bookings/{booking.id}/resolve", {"outcome": "release"}, format="json").status_code, 400)
+        response = self.client.post(f"/api/admin/bookings/{booking.id}/resolve", {"outcome": "release", "note": "Fixed on a revisit"}, format="json")
+        self.assertEqual(self.data(response)["status"], "Released")
+        self.artisan.refresh_from_db()
+        self.assertEqual(self.artisan.wallet_balance, 18000)
+        again = self.client.post(f"/api/admin/bookings/{booking.id}/resolve", {"outcome": "refund", "note": "x"}, format="json")
+        self.assertEqual(again.status_code, 400)
+
+    @mock.patch("services.views.admin_bookings.refund_charge", return_value={"status": "pending"})
+    def test_staff_settle_a_problem_with_a_refund(self, refund):
+        booking = self.disputed(payment_reference="full_1_1")
+        self.client.force_authenticate(make_user("staff@example.com", is_staff=True))
+        response = self.client.post(f"/api/admin/bookings/{booking.id}/resolve", {"outcome": "refund", "note": "No-show"}, format="json")
+        self.assertEqual(self.data(response)["status"], "Refunded")
+        refund.assert_called_once_with("full_1_1")
+        self.artisan.refresh_from_db()
+        self.assertEqual(self.artisan.wallet_balance, 0)
+
+    @mock.patch("services.views.admin_bookings.refund_charge", side_effect=PaystackError("Insufficient balance"))
+    def test_a_refund_paystack_refuses_leaves_it_open(self, _):
+        booking = self.disputed(payment_reference="full_1_1")
+        self.client.force_authenticate(make_user("staff@example.com", is_staff=True))
+        response = self.client.post(f"/api/admin/bookings/{booking.id}/resolve", {"outcome": "refund", "note": "No-show"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Disputed")
 
 
 class WithdrawalTests(ApiTestCase):

@@ -14,8 +14,8 @@ from services.models.job_models import BookArtisan, Transaction, Withdrawal
 LIST_LIMIT = 5
 RECENT_USERS_LIMIT = 8
 # Paid by the customer and held by us until they confirm the job (not old deposit bookings)
-HELD_STATUSES = ("Paid", "In Progress", "Completed")
-ACTIVE_STATUSES = ("Accepted", "Paid", "Deposit Paid", "In Progress", "Completed")
+HELD_STATUSES = ("Paid", "In Progress", "Completed", "Disputed")
+ACTIVE_STATUSES = ("Accepted", "Paid", "Deposit Paid", "In Progress", "Completed", "Disputed")
 
 
 def full_name(user):
@@ -81,6 +81,8 @@ def admin_overview(request):
         "bookings": {
             **this_and_last_month(bookings, "created_at", this_month, last_month),
             "active": bookings.filter(status__in=ACTIVE_STATUSES).count(),
+            # Problems customers reported, waiting for staff to settle
+            "disputed": bookings.filter(status="Disputed").count(),
         },
         "withdrawals": {
             "pending": pending_withdrawals.count(),

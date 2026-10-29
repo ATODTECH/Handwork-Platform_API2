@@ -1,6 +1,7 @@
 """
-Paystack calls for paying artisans: checking a bank account, registering it as a transfer recipient,
-and sending transfers. Customer payments use the `paystackapi` client in services/views/job_process.py.
+Paystack calls for paying artisans (checking a bank account, registering it as a transfer recipient,
+sending transfers) and for refunding customers. Customer payments use the `paystackapi` client in
+services/views/job_process.py.
 """
 import logging
 
@@ -75,3 +76,8 @@ def send_transfer(amount, recipient_code, reference, reason):
         "reference": reference,
         "reason": reason,
     })
+
+
+def refund_charge(reference):
+    """Refunds a customer's payment in full; returns Paystack's refund (status: pending or processed)"""
+    return _request("POST", "/refund", json={"transaction": reference})

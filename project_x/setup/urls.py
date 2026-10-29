@@ -12,8 +12,9 @@ from main.views.user_auth import (
 from main.views.admin_artisans import AdminArtisanViewSet
 from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
 from services.views.admin_overview import admin_overview
+from services.views.admin_bookings import AdminBookingViewSet
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
-from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_booking, verify_booking_payment, confirm_booking, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
+from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_booking, verify_booking_payment, confirm_booking, cancel_booking, report_problem, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 def health_check(request):
@@ -36,6 +37,7 @@ router.register("material_quotes", MaterialQuoteViewSet, basename='material-quot
 router.register("admin/artisans", AdminArtisanViewSet, basename="admin-artisans")
 router.register("withdrawals", WithdrawalViewSet, basename="withdrawals")
 router.register("admin/withdrawals", AdminWithdrawalViewSet, basename="admin-withdrawals")
+router.register("admin/bookings", AdminBookingViewSet, basename="admin-bookings")
 
 urlpatterns = [
     path('', health_check, name='health-check'),
@@ -54,6 +56,8 @@ urlpatterns = [
     path('api/book/<int:pk>/pay', pay_booking, name='pay-booking'),
     path('api/book/<int:pk>/verify-payment', verify_booking_payment, name='verify-booking-payment'),
     path('api/book/<int:pk>/confirm', confirm_booking, name='confirm-booking'),
+    path('api/book/<int:pk>/cancel', cancel_booking, name='cancel-booking'),
+    path('api/book/<int:pk>/report', report_problem, name='report-problem'),
     path('api/book/<int:pk>/pay-deposit/', pay_deposit, name='pay-deposit'),
     path('api/book/<int:pk>/pay-balance/', pay_balance, name='pay-balance'),
     path('api/paystack/webhook/', paystack_webhook, name='paystack-webhook'),
