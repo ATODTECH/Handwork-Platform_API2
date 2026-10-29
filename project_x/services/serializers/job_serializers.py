@@ -15,10 +15,10 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
     class Meta:
         model = BookArtisan
         fields = ('id', 'artisan', 'client', 'services', 'description', 'budget', 'agreed_amount', 'created_at', 
-            'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status',
+            'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status', 'completed_at',
         )
         # The customer is whoever is signed in, never taken from the request body
-        read_only_fields = ('client',)
+        read_only_fields = ('client', 'completed_at')
 
     def validate_artisan(self, artisan):
         # Only artisans staff have approved can take bookings
@@ -75,7 +75,7 @@ class MaterialQuoteSerializer(serializers.ModelSerializer):
         if booking.artisan != request.user:
             raise serializers.ValidationError("You can only request funds for your own bookings.")
 
-        if booking.status not in ["Accepted", "Deposit Paid", "In Progress"]:
+        if booking.status not in ["Accepted", "Paid", "Deposit Paid", "In Progress"]:
             raise serializers.ValidationError("Material funds can only be requested after booking is accepted.")
 
         if data['total_cost'] <= 0:

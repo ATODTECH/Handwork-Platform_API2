@@ -1,10 +1,21 @@
+import hashlib
+import hmac
+import json
+from datetime import timedelta
+from unittest import mock
+
+from django.conf import settings
+from django.core.management import call_command
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from rest_framework import serializers as drf_serializers
 
 from main.models import BankDetails, Notification, Rating, Skill, User
 from services.models.services_models import Services
+from services.models.job_models import Transaction
 from services.serializers.job_serializers import ArtisanBookingSerializers
+from services.views.job_process import record_payment
 
 PRIVATE_ARTISAN_FIELDS = {"email", "contact", "nin", "bvn", "document", "document_type", "address", "password"}
 
@@ -302,7 +313,9 @@ class ArtisanVerificationTests(ApiTestCase):
         self.assertEqual(self.client.post("/api/category", {"name": "Cleaning"}).status_code, 201)
 
 
-class BookingTests(ApiTestCase):
+class BookingTestCase(ApiTestCase):
+    """A customer, and an approved artisan who offers plumbing"""
+
     def setUp(self):
         self.customer = make_user("chi@example.com")
         self.other_customer = make_user("femi@example.com")
@@ -326,6 +339,21 @@ class BookingTests(ApiTestCase):
             **overrides,
         }, format="json")
 
+    def booking(self, **extra):
+        self.client.force_authenticate(self.customer)
+        booking_id = self.data(self.book())["id"]
+        booking = self.customer.job_owner.get(pk=booking_id)
+        for field, value in extra.items():
+            setattr(booking, field, value)
+        booking.save()
+        self.client.force_authenticate(self.artisan)
+        return booking
+
+    def respond(self, booking, **data):
+        return self.client.patch(f"/api/book/artisan/{booking.id}", data, format="json")
+
+
+class BookingTests(BookingTestCase):
     def test_the_customer_is_whoever_is_signed_in(self):
         self.client.force_authenticate(self.customer)
         response = self.book(client=str(self.other_customer.id))
@@ -343,19 +371,6 @@ class BookingTests(ApiTestCase):
         self.client.force_authenticate(self.customer)
         self.assertEqual(self.book(services=[self.tailoring.id]).status_code, 400)
 
-    def booking(self, **extra):
-        self.client.force_authenticate(self.customer)
-        booking_id = self.data(self.book())["id"]
-        booking = self.customer.job_owner.get(pk=booking_id)
-        for field, value in extra.items():
-            setattr(booking, field, value)
-        booking.save()
-        self.client.force_authenticate(self.artisan)
-        return booking
-
-    def respond(self, booking, **data):
-        return self.client.patch(f"/api/book/artisan/{booking.id}", data, format="json")
-
     def test_artisan_accepts_with_a_price(self):
         booking = self.booking()
         self.assertEqual(self.respond(booking, status="Accepted").status_code, 400)
@@ -370,7 +385,7 @@ class BookingTests(ApiTestCase):
 
     def test_artisans_cannot_skip_payments(self):
         booking = self.booking(status="Accepted", agreed_amount=20000)
-        for skipped in ("Deposit Paid", "In Progress", "Paid in Full"):
+        for skipped in ("Paid", "Deposit Paid", "In Progress", "Released", "Paid in Full"):
             self.assertEqual(self.respond(booking, status=skipped).status_code, 400)
         booking = self.booking(status="Deposit Paid", agreed_amount=20000)
         self.assertEqual(self.respond(booking, status="In Progress", agreed_amount="1").status_code, 400)
@@ -381,3 +396,90 @@ class BookingTests(ApiTestCase):
         booking = self.booking()
         self.client.force_authenticate(self.customer)
         self.assertEqual(self.respond(booking, status="Accepted", agreed_amount="1").status_code, 403)
+
+
+class PaymentTests(BookingTestCase):
+    """One full payment, held until the customer confirms the job is done"""
+
+    def accepted(self):
+        return self.booking(status="Accepted", agreed_amount=20000)
+
+    def as_customer(self):
+        self.client.force_authenticate(self.customer)
+
+    def test_customer_pays_the_full_price(self):
+        booking = self.accepted()
+        self.as_customer()
+        initialize = {"status": True, "data": {"authorization_url": "https://checkout.paystack.com/x", "access_code": "ac_1", "reference": "r"}}
+        with mock.patch("services.views.job_process.paystack.transaction.initialize", return_value=initialize) as start:
+            response = self.client.post(f"/api/book/{booking.id}/pay")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.data(response)["access_code"], "ac_1")
+        self.assertEqual(start.call_args.kwargs["amount"], 2_000_000)
+        self.assertTrue(start.call_args.kwargs["reference"].startswith(f"full_{booking.id}_"))
+
+    def test_only_accepted_bookings_can_be_paid(self):
+        booking = self.booking()
+        self.as_customer()
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/pay").status_code, 400)
+
+    def test_a_payment_is_applied_once_and_only_for_the_right_amount(self):
+        booking = self.accepted()
+        record_payment(f"full_{booking.id}_1", 100)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Accepted")
+
+        record_payment(f"full_{booking.id}_1", 2_000_000)
+        record_payment(f"full_{booking.id}_1", 2_000_000)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Paid")
+        self.assertEqual(Notification.objects.filter(recipient=self.artisan, message__contains="has paid").count(), 1)
+
+    def test_verify_after_the_popup(self):
+        booking = self.accepted()
+        self.as_customer()
+        reference = f"full_{booking.id}_1"
+        with mock.patch("services.views.job_process.verify_paystack", return_value={"amount": 2_000_000}):
+            response = self.client.post(f"/api/book/{booking.id}/verify-payment", {"reference": reference}, format="json")
+        self.assertEqual(self.data(response)["status"], "Paid")
+        with mock.patch("services.views.job_process.verify_paystack", return_value=None):
+            other = self.accepted()
+            self.as_customer()
+            self.assertEqual(self.client.post(f"/api/book/{other.id}/verify-payment", {"reference": f"full_{other.id}_2"}, format="json").status_code, 400)
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/verify-payment", {"reference": "full_999_1"}, format="json").status_code, 400)
+
+    def test_signed_webhook_records_the_payment(self):
+        booking = self.accepted()
+        body = json.dumps({"event": "charge.success", "data": {"reference": f"full_{booking.id}_1", "amount": 2_000_000}}).encode()
+        signature = hmac.new(settings.PAYSTACK_SECRET_KEY.encode(), body, hashlib.sha512).hexdigest()
+        self.client.post("/api/paystack/webhook/", body, content_type="application/json", HTTP_X_PAYSTACK_SIGNATURE="bad")
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Accepted")
+        self.client.post("/api/paystack/webhook/", body, content_type="application/json", HTTP_X_PAYSTACK_SIGNATURE=signature)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, "Paid")
+
+    def test_confirming_pays_the_artisan_once(self):
+        booking = self.booking(status="Paid", agreed_amount=20000)
+        self.assertEqual(self.respond(booking, status="In Progress").status_code, 200)
+        self.assertEqual(self.respond(booking, status="Completed").status_code, 200)
+        booking.refresh_from_db()
+        self.assertIsNotNone(booking.completed_at)
+
+        self.as_customer()
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/pay-balance/").status_code, 400)
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/confirm").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/book/{booking.id}/confirm").status_code, 400)
+        booking.refresh_from_db()
+        self.artisan.refresh_from_db()
+        self.assertEqual(booking.status, "Released")
+        self.assertEqual(self.artisan.wallet_balance, 18000)
+        self.assertEqual(Transaction.objects.get(booking=booking).net_amount, 18000)
+
+    def test_unconfirmed_jobs_are_released_after_48_hours(self):
+        old = self.booking(status="Completed", agreed_amount=20000, completed_at=timezone.now() - timedelta(hours=49))
+        recent = self.booking(status="Completed", agreed_amount=20000, completed_at=timezone.now() - timedelta(hours=1))
+        call_command("release_completed_bookings", stdout=mock.MagicMock())
+        old.refresh_from_db()
+        recent.refresh_from_db()
+        self.assertEqual((old.status, recent.status), ("Released", "Completed"))
