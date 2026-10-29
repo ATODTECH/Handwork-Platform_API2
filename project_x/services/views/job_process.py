@@ -446,7 +446,7 @@ def record_payment(reference, amount_kobo):
         return None
 
     with transaction.atomic():
-        booking = BookArtisan.objects.select_for_update().select_related("client", "artisan").filter(id=booking_id).first()
+        booking = BookArtisan.objects.select_for_update(of=("self",)).select_related("client", "artisan").filter(id=booking_id).first()
         if booking is None:
             logger.error(f"Payment {reference} is for a booking that doesn't exist")
             return None
@@ -538,7 +538,7 @@ def verify_booking_payment(request, pk):
 def confirm_booking(request, pk):
     with transaction.atomic():
         booking = get_object_or_404(
-            BookArtisan.objects.select_for_update().select_related("client", "artisan"), id=pk, client=request.user
+            BookArtisan.objects.select_for_update(of=("self",)).select_related("client", "artisan"), id=pk, client=request.user
         )
         # Old deposit bookings are paid out when the balance is paid instead
         if booking.status != "Completed" or booking.deposit_paid_at:
@@ -639,8 +639,9 @@ def paystack_webhook(request):
     try:
         record_payment(data['reference'], data.get('amount', 0))
     except Exception:
-        # Paystack retries on errors; a 200 stops it retrying a payment we can't apply
+        # Answer with an error so Paystack retries; record_payment is safe to run again
         logger.exception(f"Error processing webhook for {data['reference']}")
+        return Response(status=500)
     return Response({"message": "Webhook processed successfully"}, status=200)
 
 
