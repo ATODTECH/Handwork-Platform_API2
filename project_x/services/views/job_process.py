@@ -1,6 +1,6 @@
 from . import BookArtisan, ArtisanBookingSerializers, User
 from services.models.job_models import MaterialQuote, Transaction
-from services.serializers.job_serializers import MaterialQuoteSerializer
+from services.serializers.job_serializers import MaterialQuoteSerializer, CancelBookingSerializer, ReportProblemSerializer
 from rest_framework import viewsets, response, status, filters
 from rest_framework.decorators import api_view
 from django.shortcuts import get_list_or_404, get_object_or_404
@@ -128,11 +128,12 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
             updated_booking.save(update_fields=["completed_at"])
 
         if new_status == "Accepted":
+            above_budget = (f" (your budget was ₦{updated_booking.budget:,})"
+                            if updated_booking.agreed_amount > updated_booking.budget else "")
             Notification.objects.create(
                 recipient=updated_booking.client,
-                message=f"Your booking has been accepted by {booking.artisan.first_name}. "
-                        f"Total: ₦{updated_booking.agreed_amount:,}. "
-                        f"Please pay deposit of ₦{updated_booking.deposit_amount:,} to proceed.",
+                message=f"{booking.artisan.first_name} accepted your booking for ₦{updated_booking.agreed_amount:,}{above_budget}. "
+                        f"Pay to confirm it, or cancel if the price doesn't work for you.",
                 notification_type='PAYMENT'
             )
         elif new_status == "Declined":
@@ -174,7 +175,7 @@ def get_my_bookings(request):
     bookings = BookArtisan.objects.filter(Q(client=user) | Q(artisan=user))
     if not bookings.exists():
         return response.Response({"message": "No bookings found."}, status=status.HTTP_404_NOT_FOUND)
-    serialized_data = ArtisanBookingSerializers(bookings, many=True).data
+    serialized_data = ArtisanBookingSerializers(bookings, many=True, context={"request": request}).data
     logger.info(f"Bookings retrieved for user {user.email}")
     return response.Response(serialized_data, status=status.HTTP_200_OK)
 
@@ -349,6 +350,10 @@ def get_today_bookings(request):
 
 PLATFORM_FEE = Decimal('0.10')
 RELEASE_AFTER_HOURS = 48
+# Before paying, a customer may cancel (which also turns down the artisan's price)
+CANCELLABLE_STATUSES = ("Pending", "Accepted")
+# Once paid and until the artisan is paid, a customer may report a problem
+DISPUTABLE_STATUSES = ("Paid", "In Progress", "Completed")
 PAYSTACK_TIMEOUT_SECONDS = 15
 
 
@@ -419,7 +424,7 @@ def credit_artisan(booking):
     return net_amount
 
 
-def release_booking(booking, *, automatic=False):
+def release_booking(booking, *, automatic=False, client_message=None):
     """Pays the artisan for a job the customer confirmed (or didn't dispute in time). Call inside a transaction."""
     net_amount = credit_artisan(booking)
     booking.status = "Released"
@@ -429,14 +434,12 @@ def release_booking(booking, *, automatic=False):
         message=f"₦{net_amount:,} for your job with {booking.client.first_name} has been added to your earnings.",
         notification_type="PAYMENT"
     )
-    Notification.objects.create(
-        recipient=booking.client,
-        message=(
+    if client_message is None:
+        client_message = (
             f"We've paid {booking.artisan.first_name} for your job, as {RELEASE_AFTER_HOURS} hours passed without a problem reported."
             if automatic else f"Thanks for confirming. We've paid {booking.artisan.first_name} for your job."
-        ),
-        notification_type="PAYMENT"
-    )
+        )
+    Notification.objects.create(recipient=booking.client, message=client_message, notification_type="PAYMENT")
 
 
 def record_payment(reference, amount_kobo):
@@ -473,6 +476,7 @@ def record_payment(reference, amount_kobo):
         if payment_type == "full":
             booking.status = "Paid"
             booking.fully_paid_at = now
+            booking.payment_reference = reference
             artisan_message = (f"{booking.client.first_name} has paid ₦{booking.agreed_amount:,}. We're holding it until "
                                f"the job is done. You can start on the scheduled day.")
             client_message = "Payment received. We'll hold it and only pay the artisan once you confirm the job is done."
@@ -532,7 +536,7 @@ def verify_booking_payment(request, pk):
         return Response({"detail": "Paystack hasn't confirmed this payment."}, status=status.HTTP_400_BAD_REQUEST)
     record_payment(reference, charge.get("amount", 0))
     booking.refresh_from_db()
-    return Response(ArtisanBookingSerializers(booking).data)
+    return Response(ArtisanBookingSerializers(booking, context={"request": request}).data)
 
 
 # ─────────────────────────────────────────────
@@ -552,7 +556,79 @@ def confirm_booking(request, pk):
                 status=status.HTTP_400_BAD_REQUEST
             )
         release_booking(booking)
-    return Response(ArtisanBookingSerializers(booking).data)
+    return Response(ArtisanBookingSerializers(booking, context={"request": request}).data)
+
+
+# ─────────────────────────────────────────────
+# CANCEL A BOOKING (customer, before paying)
+# ─────────────────────────────────────────────
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_booking(request, pk):
+    serializer = CancelBookingSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    reason = serializer.validated_data.get("reason", "")
+    with transaction.atomic():
+        booking = get_object_or_404(
+            BookArtisan.objects.select_for_update(of=("self",)).select_related("client", "artisan"), id=pk, client=request.user
+        )
+        if booking.status not in CANCELLABLE_STATUSES:
+            return Response(
+                {"detail": "Only a booking you haven't paid for can be cancelled. Report a problem instead."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        declined_price = booking.status == "Accepted"
+        booking.status = "Cancelled"
+        booking.cancelled_at = timezone.now()
+        booking.cancellation_reason = reason
+        booking.save()
+        if booking.artisan:
+            what = f"declined your price of ₦{booking.agreed_amount:,} and cancelled" if declined_price else "cancelled"
+            Notification.objects.create(
+                recipient=booking.artisan,
+                message=f"{booking.client.first_name} {what} their booking.{f' Reason: {reason}' if reason else ''}",
+                notification_type='BOOKING'
+            )
+    logger.info(f"Booking {booking.id} cancelled by {request.user.email}")
+    return Response(ArtisanBookingSerializers(booking, context={"request": request}).data)
+
+
+# ─────────────────────────────────────────────
+# REPORT A PROBLEM (customer, once paid; holds the payment for staff)
+# ─────────────────────────────────────────────
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def report_problem(request, pk):
+    serializer = ReportProblemSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    with transaction.atomic():
+        booking = get_object_or_404(
+            BookArtisan.objects.select_for_update(of=("self",)).select_related("client", "artisan"), id=pk, client=request.user
+        )
+        # Old deposit bookings are paid out with the balance, so there's nothing for us to hold
+        if booking.status not in DISPUTABLE_STATUSES or booking.deposit_paid_at:
+            return Response(
+                {"detail": "You can report a problem once you've paid, until the artisan is paid."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        booking.status = "Disputed"
+        booking.disputed_at = timezone.now()
+        booking.dispute_reason = serializer.validated_data["reason"]
+        booking.save()
+        Notification.objects.create(
+            recipient=booking.client,
+            message="Thanks for letting us know. We're holding your payment and our team will contact you shortly.",
+            notification_type='BOOKING'
+        )
+        if booking.artisan:
+            Notification.objects.create(
+                recipient=booking.artisan,
+                message=f"{booking.client.first_name} reported a problem with their job. We're holding the payment "
+                        f"while our team looks into it, and will contact you.",
+                notification_type='BOOKING'
+            )
+    logger.info(f"Problem reported on booking {booking.id} by {request.user.email}")
+    return Response(ArtisanBookingSerializers(booking, context={"request": request}).data)
 
 
 # ─────────────────────────────────────────────
