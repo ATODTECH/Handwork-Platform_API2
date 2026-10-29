@@ -342,3 +342,42 @@ class BookingTests(ApiTestCase):
     def test_services_must_be_ones_the_artisan_offers(self):
         self.client.force_authenticate(self.customer)
         self.assertEqual(self.book(services=[self.tailoring.id]).status_code, 400)
+
+    def booking(self, **extra):
+        self.client.force_authenticate(self.customer)
+        booking_id = self.data(self.book())["id"]
+        booking = self.customer.job_owner.get(pk=booking_id)
+        for field, value in extra.items():
+            setattr(booking, field, value)
+        booking.save()
+        self.client.force_authenticate(self.artisan)
+        return booking
+
+    def respond(self, booking, **data):
+        return self.client.patch(f"/api/book/artisan/{booking.id}", data, format="json")
+
+    def test_artisan_accepts_with_a_price(self):
+        booking = self.booking()
+        self.assertEqual(self.respond(booking, status="Accepted").status_code, 400)
+        self.assertEqual(self.respond(booking, status="Accepted", agreed_amount="20000").status_code, 200)
+        booking.refresh_from_db()
+        self.assertEqual((booking.status, booking.agreed_amount, booking.deposit_amount), ("Accepted", 20000, 14000))
+
+    def test_artisan_can_decline(self):
+        booking = self.booking()
+        self.assertEqual(self.respond(booking, status="Declined").status_code, 200)
+        self.assertTrue(Notification.objects.filter(recipient=self.customer, message__contains="can't take").exists())
+
+    def test_artisans_cannot_skip_payments(self):
+        booking = self.booking(status="Accepted", agreed_amount=20000)
+        for skipped in ("Deposit Paid", "In Progress", "Paid in Full"):
+            self.assertEqual(self.respond(booking, status=skipped).status_code, 400)
+        booking = self.booking(status="Deposit Paid", agreed_amount=20000)
+        self.assertEqual(self.respond(booking, status="In Progress", agreed_amount="1").status_code, 400)
+        self.assertEqual(self.respond(booking, status="In Progress").status_code, 200)
+        self.assertEqual(self.respond(booking, status="Completed").status_code, 200)
+
+    def test_customers_cannot_change_a_booking(self):
+        booking = self.booking()
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(self.respond(booking, status="Accepted", agreed_amount="1").status_code, 403)
