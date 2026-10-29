@@ -8,13 +8,18 @@ class AutoDateTimeField(models.DateTimeField):
         return timezone.now()
 
 class BookArtisan(models.Model):
+    # Pending -> Accepted (artisan sets the price) -> Paid (customer pays it all; we hold it)
+    # -> In Progress -> Completed (artisan) -> Released (customer confirms; artisan is credited).
+    # "Deposit Paid" and "Paid in Full" belong to the old 70% deposit + 30% balance flow.
     STATUS = (
         ("Pending", "Pending"),
         ("Accepted", "Accepted"),
         ("Declined", "Declined"),
+        ("Paid", "Paid"),
         ("Deposit Paid", "Deposit Paid"),
-        ("In Progress", "In Progress"),  
-        ("Completed", "Completed"),      
+        ("In Progress", "In Progress"),
+        ("Completed", "Completed"),
+        ("Released", "Released"),
         ("Paid in Full", "Paid in Full"),
     )
     client = models.ForeignKey(User, on_delete=models.DO_NOTHING, limit_choices_to={'role': 'USER'},related_name='job_owner')
@@ -39,6 +44,10 @@ class BookArtisan(models.Model):
         help_text="Remaining amount after deposit"
     )
     fully_paid_at = models.DateTimeField(null=True, blank=True)
+    # When the artisan marked the job done; it's released automatically a while after this
+    completed_at = models.DateTimeField(null=True, blank=True)
+    # When the artisan's earnings were added to their wallet
+    released_at = models.DateTimeField(null=True, blank=True)
     address = models.CharField(max_length=400, null=True)
     scheduled_date = models.DateField(null=True)
     scheduled_time = models.TimeField(null=True)

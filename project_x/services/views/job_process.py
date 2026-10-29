@@ -34,10 +34,11 @@ paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 # ─────────────────────────────────────────────
 # BOOK ARTISAN VIEWSET
 # ─────────────────────────────────────────────
-# The only status changes an artisan may make; payments move the others (deposit and balance webhooks)
+# The only status changes an artisan may make; payments and the customer's confirmation move the others
 ARTISAN_TRANSITIONS = {
     ("Pending", "Accepted"),
     ("Pending", "Declined"),
+    ("Paid", "In Progress"),
     ("Deposit Paid", "In Progress"),
     ("In Progress", "Completed"),
 }
@@ -122,6 +123,9 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         updated_booking = serializer.save()
+        if new_status == "Completed":
+            updated_booking.completed_at = timezone.now()
+            updated_booking.save(update_fields=["completed_at"])
 
         if new_status == "Accepted":
             Notification.objects.create(
@@ -143,12 +147,19 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
                 message="The artisan has started working on your job.",
                 notification_type='BOOKING'
             )
-        elif new_status == "Completed":
+        elif new_status == "Completed" and updated_booking.deposit_paid_at:
             Notification.objects.create(
                 recipient=updated_booking.client,
                 message=f"The job has been marked as completed by the artisan. "
                         f"Please pay the balance of ₦{updated_booking.balance_amount:,} to release funds.",
                 notification_type='PAYMENT'
+            )
+        elif new_status == "Completed":
+            Notification.objects.create(
+                recipient=updated_booking.client,
+                message=f"{booking.artisan.first_name} has marked your job as done. Please confirm it so we can pay them. "
+                        f"If there's a problem, contact support within {RELEASE_AFTER_HOURS} hours.",
+                notification_type='BOOKING'
             )
 
         return response.Response(serializer.data, status=status.HTTP_200_OK)
@@ -328,14 +339,224 @@ def get_today_bookings(request):
 
 
 # ─────────────────────────────────────────────
-# PAY DEPOSIT
+# PAYMENTS
+# ─────────────────────────────────────────────
+# Customers pay the full agreed price once (`pay_booking`). Handwork Expert holds it until the customer
+# confirms the job is done (`confirm_booking`), or RELEASE_AFTER_HOURS after the artisan marks it done
+# (`manage.py release_completed_bookings`). Then the artisan's wallet is credited, minus PLATFORM_FEE.
+# Bookings from before this paid a 70% deposit and a 30% balance; `pay_deposit` and `pay_balance`
+# stay for those and for older app builds.
+
+PLATFORM_FEE = Decimal('0.10')
+VAT_RATE = Decimal('0.075')
+RELEASE_AFTER_HOURS = 48
+PAYSTACK_TIMEOUT_SECONDS = 15
+
+
+def start_paystack_payment(booking, user, payment_type, amount):
+    """Opens a Paystack transaction; the reference encodes what it pays for: {type}_{booking id}_{time}"""
+    reference = f"{payment_type}_{booking.id}_{int(timezone.now().timestamp())}"
+    paystack_response = paystack.transaction.initialize(
+        reference=reference,
+        amount=int(amount * 100),
+        email=user.email,
+        callback_url=f"{settings.BASE_URL}/api/paystack/webhook/",
+        metadata={"booking_id": booking.id, "payment_type": payment_type, "user_id": str(user.id)},
+    )
+    if not paystack_response.get("status"):
+        return Response(
+            {"detail": paystack_response.get("message", "Payment initialization failed")},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    data = paystack_response["data"]
+    return Response({
+        "authorization_url": data["authorization_url"],
+        # The web resumes this transaction in Paystack's pop-up
+        "access_code": data["access_code"],
+        "reference": data["reference"],
+        "amount": amount,
+    })
+
+
+def verify_paystack(reference):
+    """The charge Paystack reports for this reference, or None when it isn't a successful one"""
+    resp = requests.get(
+        f"https://api.paystack.co/transaction/verify/{reference}",
+        headers={"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"},
+        timeout=PAYSTACK_TIMEOUT_SECONDS,
+    )
+    data = resp.json()
+    if data.get("status") and data.get("data", {}).get("status") == "success":
+        return data["data"]
+    return None
+
+
+def credit_artisan(booking):
+    """Adds the artisan's share of a fully paid job to their wallet and records the earning"""
+    gross = to_decimal(booking.agreed_amount or booking.budget)
+    platform_fee = (gross * PLATFORM_FEE).quantize(Decimal('0.01'))
+    vat = (gross * VAT_RATE).quantize(Decimal('0.01'))
+    net_amount = (gross - platform_fee).quantize(Decimal('0.01'))
+
+    artisan = User.objects.select_for_update().get(pk=booking.artisan_id)
+    artisan.wallet_balance = (artisan.wallet_balance + net_amount).quantize(Decimal('0.01'))
+    artisan.save(update_fields=['wallet_balance'])
+    Transaction.objects.create(
+        artisan=artisan,
+        booking=booking,
+        gross_amount=gross,
+        platform_fee=platform_fee,
+        vat=vat,
+        net_amount=net_amount,
+        transaction_type='EARNING'
+    )
+    booking.released_at = timezone.now()
+    return net_amount
+
+
+def release_booking(booking, *, automatic=False):
+    """Pays the artisan for a job the customer confirmed (or didn't dispute in time). Call inside a transaction."""
+    net_amount = credit_artisan(booking)
+    booking.status = "Released"
+    booking.save()
+    Notification.objects.create(
+        recipient=booking.artisan,
+        message=f"₦{net_amount:,} for your job with {booking.client.first_name} has been added to your earnings.",
+        notification_type="PAYMENT"
+    )
+    Notification.objects.create(
+        recipient=booking.client,
+        message=(
+            f"We've paid {booking.artisan.first_name} for your job, as {RELEASE_AFTER_HOURS} hours passed without a problem reported."
+            if automatic else f"Thanks for confirming. We've paid {booking.artisan.first_name} for your job."
+        ),
+        notification_type="PAYMENT"
+    )
+
+
+def record_payment(reference, amount_kobo):
+    """
+    Applies a successful Paystack charge to its booking. Safe to call more than once for the same
+    charge: the webhook, the redirect callback and the web's verify call may all report it.
+    """
+    try:
+        payment_type, booking_id = reference.split("_")[0], int(reference.split("_")[1])
+    except (IndexError, ValueError):
+        logger.error(f"Unrecognised payment reference: {reference}")
+        return None
+
+    with transaction.atomic():
+        booking = BookArtisan.objects.select_for_update().select_related("client", "artisan").filter(id=booking_id).first()
+        if booking is None:
+            logger.error(f"Payment {reference} is for a booking that doesn't exist")
+            return None
+
+        # What each payment pays for: the status it must find the booking in, and the amount due
+        due = {
+            "full": ("Accepted", booking.agreed_amount),
+            "deposit": ("Accepted", booking.deposit_amount),
+            "balance": ("Completed", booking.balance_amount if booking.deposit_paid_at else None),
+        }.get(payment_type)
+        if due is None or booking.status != due[0]:
+            # Already applied, or not a payment this booking is waiting for
+            return booking
+        if due[1] is None or amount_kobo != int(due[1] * 100):
+            logger.warning(f"Payment {reference}: expected {due[1]}, Paystack charged {amount_kobo} kobo")
+            return booking
+
+        now = timezone.now()
+        if payment_type == "full":
+            booking.status = "Paid"
+            booking.fully_paid_at = now
+            artisan_message = (f"{booking.client.first_name} has paid ₦{booking.agreed_amount:,}. We're holding it until "
+                               f"the job is done. You can start on the scheduled day.")
+            client_message = "Payment received. We'll hold it and only pay the artisan once you confirm the job is done."
+        elif payment_type == "deposit":
+            booking.status = "Deposit Paid"
+            booking.deposit_paid_at = now
+            artisan_message = f"Client has paid ₦{booking.deposit_amount:,} deposit. You can now start the job!"
+            client_message = "Deposit payment successful! The artisan will begin work soon."
+        else:
+            credit_artisan(booking)
+            booking.status = "Paid in Full"
+            booking.fully_paid_at = now
+            artisan_message = f"Final payment of ₦{booking.balance_amount:,} received. Funds released!"
+            client_message = "Balance payment successful. Thank you!"
+        booking.save()
+
+        Notification.objects.create(recipient=booking.artisan, message=artisan_message, notification_type="PAYMENT")
+        Notification.objects.create(recipient=booking.client, message=client_message, notification_type="PAYMENT")
+        logger.info(f"Payment {reference} applied: booking {booking.id} is now {booking.status}")
+        return booking
+
+
+# ─────────────────────────────────────────────
+# PAY FOR A BOOKING (the full agreed price)
+# ─────────────────────────────────────────────
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def pay_booking(request, pk):
+    booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
+    if booking.status != "Accepted":
+        return Response({"detail": "This booking isn't waiting for payment."}, status=status.HTTP_400_BAD_REQUEST)
+    if not booking.agreed_amount or booking.agreed_amount <= 0:
+        return Response({"detail": "Agreed amount not set."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        return start_paystack_payment(booking, request.user, "full", booking.agreed_amount)
+    except Exception:
+        logger.exception(f"Starting payment for booking {booking.id} failed")
+        return Response({"detail": "We couldn't reach Paystack. Please try again."}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+# ─────────────────────────────────────────────
+# VERIFY A PAYMENT (straight after Paystack's pop-up closes)
+# ─────────────────────────────────────────────
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def verify_booking_payment(request, pk):
+    booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
+    reference = str(request.data.get("reference", ""))
+    if not reference.startswith(f"full_{booking.id}_"):
+        return Response({"reference": ["This payment isn't for this booking."]}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        charge = verify_paystack(reference)
+    except Exception:
+        logger.exception(f"Verifying payment {reference} failed")
+        return Response({"detail": "We couldn't reach Paystack. Please try again."}, status=status.HTTP_502_BAD_GATEWAY)
+    if charge is None:
+        return Response({"detail": "Paystack hasn't confirmed this payment."}, status=status.HTTP_400_BAD_REQUEST)
+    record_payment(reference, charge.get("amount", 0))
+    booking.refresh_from_db()
+    return Response(ArtisanBookingSerializers(booking).data)
+
+
+# ─────────────────────────────────────────────
+# CONFIRM THE JOB IS DONE (pays the artisan)
+# ─────────────────────────────────────────────
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def confirm_booking(request, pk):
+    with transaction.atomic():
+        booking = get_object_or_404(
+            BookArtisan.objects.select_for_update().select_related("client", "artisan"), id=pk, client=request.user
+        )
+        # Old deposit bookings are paid out when the balance is paid instead
+        if booking.status != "Completed" or booking.deposit_paid_at:
+            return Response(
+                {"detail": "Only a job the artisan has marked as done can be confirmed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        release_booking(booking)
+    return Response(ArtisanBookingSerializers(booking).data)
+
+
+# ─────────────────────────────────────────────
+# PAY DEPOSIT / PAY BALANCE (old 70% + 30% bookings)
 # ─────────────────────────────────────────────
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def pay_deposit(request, pk):
-    logger.info("pay_deposit HIT")
     booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
-
     if booking.status != "Accepted":
         return Response(
             {"detail": "Booking must be accepted before paying deposit."},
@@ -343,175 +564,63 @@ def pay_deposit(request, pk):
         )
     if not booking.agreed_amount or booking.agreed_amount <= 0:
         return Response({"detail": "Agreed amount not set."}, status=status.HTTP_400_BAD_REQUEST)
-
     try:
-        deposit_percentage = Decimal('0.70')
-        deposit_amount = (booking.agreed_amount * deposit_percentage).quantize(Decimal('0.01'))
-        balance_amount = (booking.agreed_amount - deposit_amount).quantize(Decimal('0.01'))
-        reference = f"deposit_{booking.id}_{int(timezone.now().timestamp())}"
-        amount_kobo = int(deposit_amount * Decimal('100'))
-
-        paystack_response = paystack.transaction.initialize(
-            reference=reference,
-            amount=amount_kobo,
-            email=request.user.email,
-            callback_url=f"{settings.BASE_URL}/api/paystack/webhook/",
-            metadata={
-                "booking_id": booking.id,
-                "payment_type": "deposit",
-                "user_id": str(request.user.id)
-            }
-        )
-
-        if paystack_response.get("status"):
-            booking.deposit_amount = deposit_amount
-            booking.balance_amount = balance_amount
-            booking.save(update_fields=["deposit_amount", "balance_amount"])
-            return Response({
-                "authorization_url": paystack_response["data"]["authorization_url"],
-                "reference": paystack_response["data"]["reference"],
-                "amount": deposit_amount
-            })
-        return Response(
-            {"detail": paystack_response.get("message", "Payment initialization failed")},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
+        booking.save()  # works out deposit_amount and balance_amount from the agreed price
+        return start_paystack_payment(booking, request.user, "deposit", booking.deposit_amount)
     except Exception as e:
         logger.exception("Deposit payment initialization failed")
         return Response({"detail": f"Server error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# ─────────────────────────────────────────────
-# PAY BALANCE
-# ─────────────────────────────────────────────
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def pay_balance(request, pk):
     booking = get_object_or_404(BookArtisan, id=pk, client=request.user)
-
-    if booking.status != "Completed":
+    # Bookings paid in full up front have no balance; only deposit bookings do
+    if booking.status != "Completed" or not booking.deposit_paid_at:
         return Response(
             {"detail": "Job must be marked as completed before paying balance."},
             status=status.HTTP_400_BAD_REQUEST
         )
     if not booking.balance_amount or booking.balance_amount <= 0:
         return Response({"detail": "No balance due."}, status=status.HTTP_400_BAD_REQUEST)
-
-    reference = f"balance_{booking.id}_{int(timezone.now().timestamp())}"
-
     try:
-        paystack_response = paystack.transaction.initialize(
-            reference=reference,
-            amount=int(booking.balance_amount * 100),
-            email=request.user.email,
-            callback_url=f"{settings.BASE_URL}/api/paystack/webhook/",
-            metadata={
-                "booking_id": booking.id,
-                "payment_type": "balance",
-                "user_id": str(request.user.id)
-            }
-        )
-        return Response({
-            "authorization_url": paystack_response["data"]["authorization_url"],
-            "reference": paystack_response["data"]["reference"],
-            "amount": booking.balance_amount
-        })
+        return start_paystack_payment(booking, request.user, "balance", booking.balance_amount)
     except Exception as e:
         return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ─────────────────────────────────────────────
-# PAYSTACK WEBHOOK
+# PAYSTACK WEBHOOK (POST) and redirect callback (GET, used by the mobile app's checkout)
 # ─────────────────────────────────────────────
 @api_view(['POST', 'GET'])
 @permission_classes([AllowAny])
 def paystack_webhook(request):
-    logger.info(f"Paystack callback/webhook hit: {request.method} from {request.META.get('REMOTE_ADDR')}")
+    logger.info(f"Paystack callback/webhook hit: {request.method}")
 
-    # === HANDLE GET (browser redirect after payment) ===
     if request.method == 'GET':
         reference = request.query_params.get('reference') or request.query_params.get('trxref')
         if not reference:
             return Response({"message": "No reference provided"}, status=400)
-
         try:
-            verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
-            headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
-            resp = requests.get(verify_url, headers=headers)
-            data = resp.json()
-
-            if data.get("status") and data["data"]["status"] == "success":
-                parts = reference.split("_")
-                payment_type = parts[0]
-                booking_id = int(parts[1])
-                booking = BookArtisan.objects.get(id=booking_id)
-
-                if payment_type == "deposit" and booking.status == "Accepted":
-                    booking.status = "Deposit Paid"
-                    booking.deposit_paid_at = timezone.now()
-                    booking.save()
-
-                elif payment_type == "balance" and booking.status == "Completed":
-                    gross = to_decimal(booking.agreed_amount or booking.budget)
-                    platform_fee = (gross * Decimal('0.10')).quantize(Decimal('0.01'))
-                    vat = (gross * Decimal('0.075')).quantize(Decimal('0.01'))
-                    net_amount = (gross - platform_fee).quantize(Decimal('0.01'))
-
-                    booking.artisan.wallet_balance = (
-                        booking.artisan.wallet_balance + net_amount
-                    ).quantize(Decimal('0.01'))
-                    booking.artisan.save(update_fields=['wallet_balance'])
-
-                    Transaction.objects.create(
-                        artisan=booking.artisan,
-                        booking=booking,
-                        gross_amount=gross,
-                        platform_fee=platform_fee,
-                        vat=vat,
-                        net_amount=net_amount,
-                        transaction_type='EARNING'
-                    )
-
-                    booking.status = "Paid in Full"
-                    booking.fully_paid_at = timezone.now()
-                    booking.save()
-
-                Notification.objects.create(
-                    recipient=booking.artisan,
-                    message=f"Payment received for booking {booking_id}.",
-                    notification_type="PAYMENT"
-                )
-                Notification.objects.create(
-                    recipient=booking.client,
-                    message=f"Payment successful for booking {booking_id}.",
-                    notification_type="PAYMENT"
-                )
-                return Response({"message": "Payment successful!", "status": "success"}, status=200)
-
-            else:
-                return Response({
-                    "message": "Payment failed or abandoned.",
-                    "status": data["data"]["status"] if data.get("data") else "failed"
-                }, status=200)
-
-        except Exception as e:
+            charge = verify_paystack(reference)
+        except Exception:
             logger.exception("Error verifying GET callback")
             return Response({"message": "Unable to verify payment status"}, status=500)
+        if charge is None:
+            return Response({"message": "Payment failed or abandoned.", "status": "failed"}, status=200)
+        record_payment(reference, charge.get("amount", 0))
+        return Response({"message": "Payment successful!", "status": "success"}, status=200)
 
-    # === HANDLE POST (real Paystack webhook) ===
-    # ✅ FIXED — was hmac.new (doesn't exist), correct is hmac.new → actually correct call below
     signature = request.headers.get('x-paystack-signature')
     if not signature:
         logger.warning("Missing Paystack signature in webhook")
         return Response(status=400)
-
     computed_signature = hmac.new(
         settings.PAYSTACK_SECRET_KEY.encode('utf-8'),
         request.body,
         hashlib.sha512
     ).hexdigest()
-
     if not hmac.compare_digest(computed_signature, signature):
         logger.warning("Invalid Paystack webhook signature")
         return Response(status=400)
@@ -522,112 +631,17 @@ def paystack_webhook(request):
         logger.error("Invalid JSON in webhook payload")
         return Response(status=400)
 
-    event = payload.get('event')
-    if event != 'charge.success':
-        logger.info(f"Ignoring non-success event: {event}")
+    if payload.get('event') != 'charge.success':
         return Response({"message": "Event ignored"}, status=200)
-
     data = payload.get('data', {})
-    reference = data.get('reference')
-    if not reference:
+    if not data.get('reference'):
         return Response(status=400)
-
-    metadata = data.get('metadata', {})
-    amount_paid_kobo = data.get('amount', 0)
-    booking_id = metadata.get('booking_id')
-    payment_type = metadata.get('payment_type')
-
-    if not booking_id or not payment_type:
-        try:
-            parts = reference.split("_")
-            if len(parts) >= 2:
-                payment_type = parts[0]
-                booking_id = int(parts[1])
-        except Exception:
-            logger.error(f"Failed to parse reference: {reference}")
-            return Response(status=400)
-
-    if not booking_id or not payment_type:
-        return Response(status=400)
-
     try:
-        with transaction.atomic():
-            booking = BookArtisan.objects.select_for_update().get(id=booking_id)
-
-            expected_field = booking.deposit_amount if payment_type == "deposit" else booking.balance_amount
-            if expected_field is None:
-                return Response(status=200)
-
-            expected_kobo = int(expected_field * 100)
-            if amount_paid_kobo != expected_kobo:
-                logger.warning(f"Amount mismatch: expected {expected_kobo}, got {amount_paid_kobo}")
-                return Response(status=200)
-
-            updated = False
-
-            if payment_type == "deposit" and booking.status == "Accepted":
-                booking.status = "Deposit Paid"
-                booking.deposit_paid_at = timezone.now()
-                booking.save(update_fields=["status", "deposit_paid_at"])
-                updated = True
-                Notification.objects.create(
-                    recipient=booking.artisan,
-                    message=f"Client has paid ₦{booking.deposit_amount:,} deposit. You can now start the job!",
-                    notification_type="PAYMENT"
-                )
-                Notification.objects.create(
-                    recipient=booking.client,
-                    message="Deposit payment successful! The artisan will begin work soon.",
-                    notification_type="PAYMENT"
-                )
-
-            elif payment_type == "balance" and booking.status == "Completed":
-                gross = to_decimal(booking.agreed_amount or booking.budget)
-                platform_fee = (gross * Decimal('0.10')).quantize(Decimal('0.01'))
-                vat = (gross * Decimal('0.075')).quantize(Decimal('0.01'))
-                net_amount = (gross - platform_fee).quantize(Decimal('0.01'))
-
-                booking.artisan.wallet_balance = (
-                    booking.artisan.wallet_balance + net_amount
-                ).quantize(Decimal('0.01'))
-                booking.artisan.save(update_fields=['wallet_balance'])
-
-                booking.status = "Paid in Full"
-                booking.fully_paid_at = timezone.now()
-                booking.save(update_fields=["status", "fully_paid_at"])
-                updated = True
-
-                Transaction.objects.create(
-                    artisan=booking.artisan,
-                    booking=booking,
-                    gross_amount=gross,
-                    platform_fee=platform_fee,
-                    vat=vat,
-                    net_amount=net_amount,
-                    transaction_type='EARNING'
-                )
-                Notification.objects.create(
-                    recipient=booking.artisan,
-                    message=f"Final payment of ₦{booking.balance_amount:,} received. Funds released!",
-                    notification_type="PAYMENT"
-                )
-                Notification.objects.create(
-                    recipient=booking.client,
-                    message="Balance payment successful. Thank you!",
-                    notification_type="PAYMENT"
-                )
-
-            if updated:
-                logger.info(f"Successfully updated booking {booking_id} to {booking.status}")
-
-        return Response({"message": "Webhook processed successfully"}, status=200)
-
-    except BookArtisan.DoesNotExist:
-        logger.error(f"Booking {booking_id} not found")
-        return Response(status=200)
-    except Exception as e:
-        logger.exception(f"Error processing webhook for {reference}")
-        return Response(status=200)
+        record_payment(data['reference'], data.get('amount', 0))
+    except Exception:
+        # Paystack retries on errors; a 200 stops it retrying a payment we can't apply
+        logger.exception(f"Error processing webhook for {data['reference']}")
+    return Response({"message": "Webhook processed successfully"}, status=200)
 
 
 # ─────────────────────────────────────────────
@@ -678,6 +692,9 @@ def to_decimal(value) -> Decimal:
 # ─────────────────────────────────────────────
 # ARTISAN EARNINGS
 # ─────────────────────────────────────────────
+EARNED_STATUSES = ("Released", "Paid in Full")
+
+
 class ArtisanEarningsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -692,22 +709,22 @@ class ArtisanEarningsView(APIView):
         week_start = today_start - timedelta(days=today_start.weekday())
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        completed_jobs = BookArtisan.objects.filter(artisan=artisan, status="Paid in Full")
+        completed_jobs = BookArtisan.objects.filter(artisan=artisan, status__in=EARNED_STATUSES)
 
         today_earnings = sum(
             self.calculate_net(job.agreed_amount or job.budget)
             for job in completed_jobs
-            if job.fully_paid_at and job.fully_paid_at.date() == now.date()
+            if job.released_at and job.released_at.date() == now.date()
         )
         week_earnings = sum(
             self.calculate_net(job.agreed_amount or job.budget)
             for job in completed_jobs
-            if job.fully_paid_at and job.fully_paid_at >= week_start
+            if job.released_at and job.released_at >= week_start
         )
         month_earnings = sum(
             self.calculate_net(job.agreed_amount or job.budget)
             for job in completed_jobs
-            if job.fully_paid_at and job.fully_paid_at >= month_start
+            if job.released_at and job.released_at >= month_start
         )
 
         return Response({
@@ -745,8 +762,8 @@ class ArtisanPaymentsView(APIView):
 
             recent = BookArtisan.objects.filter(
                 artisan=request.user,
-                status="Paid in Full"
-            ).select_related('client').prefetch_related('services').order_by('-fully_paid_at')[:10]
+                status__in=EARNED_STATUSES
+            ).select_related('client').prefetch_related('services').order_by('-released_at')[:10]
 
             recent_data = []
             for job in recent:
@@ -765,7 +782,7 @@ class ArtisanPaymentsView(APIView):
                     },
                     "service": ", ".join(s.name for s in job.services.all()),
                     "location": job.address or "N/A",
-                    "date": job.fully_paid_at.strftime("%d/%m/%Y") if job.fully_paid_at else "N/A",
+                    "date": job.released_at.strftime("%d/%m/%Y") if job.released_at else "N/A",
                     "amount": self.calculate_net(job.agreed_amount or job.budget),
                     "status": "Paid"
                 })
@@ -793,7 +810,9 @@ class ArtisanPaymentsView(APIView):
                     "service": ", ".join(s.name for s in job.services.all()),
                     "location": job.address or "N/A",
                     "date": job.scheduled_date.strftime("%d/%m/%Y") if job.scheduled_date else "N/A",
-                    "amount": float(job.balance_amount) if job.balance_amount else 0.00,
+                    # Old deposit bookings still owe the balance; new ones are paid and await confirmation
+                    "amount": (float(job.balance_amount or 0) if job.deposit_paid_at
+                               else self.calculate_net(job.agreed_amount or job.budget)),
                     "status": "Pending"
                 })
 
@@ -827,13 +846,13 @@ class ArtisanEarningsFilterView(APIView):
         start_date = parse_date(start_date_str) if start_date_str else None
         end_date = parse_date(end_date_str) if end_date_str else None
 
-        completed_jobs = BookArtisan.objects.filter(artisan=artisan, status="Paid in Full")
+        completed_jobs = BookArtisan.objects.filter(artisan=artisan, status__in=EARNED_STATUSES)
 
         if start_date and end_date:
             end_date_next = end_date + timedelta(days=1)
             completed_jobs = completed_jobs.filter(
-                fully_paid_at__gte=start_date,
-                fully_paid_at__lt=end_date_next
+                released_at__gte=start_date,
+                released_at__lt=end_date_next
             )
         elif start_date or end_date:
             return Response(
@@ -844,7 +863,7 @@ class ArtisanEarningsFilterView(APIView):
         total_earnings = sum(
             self.calculate_net(job.agreed_amount or job.budget)
             for job in completed_jobs
-            if job.fully_paid_at
+            if job.released_at
         )
 
         return Response({
