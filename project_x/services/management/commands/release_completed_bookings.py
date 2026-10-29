@@ -27,7 +27,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"Would release booking {booking_id}")
                 continue
             with transaction.atomic():
-                booking = BookArtisan.objects.select_for_update().select_related("client", "artisan").get(id=booking_id)
+                booking = BookArtisan.objects.select_for_update(of=("self",)).select_related("client", "artisan").get(id=booking_id)
                 if booking.status != "Completed":
                     continue
                 release_booking(booking, automatic=True)
