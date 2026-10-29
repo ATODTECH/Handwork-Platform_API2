@@ -348,7 +348,6 @@ def get_today_bookings(request):
 # stay for those and for older app builds.
 
 PLATFORM_FEE = Decimal('0.10')
-VAT_RATE = Decimal('0.075')
 RELEASE_AFTER_HOURS = 48
 PAYSTACK_TIMEOUT_SECONDS = 15
 
@@ -391,12 +390,18 @@ def verify_paystack(reference):
     return None
 
 
+def artisan_share(gross):
+    """What the artisan earns from a job: the price minus our fee (no VAT is taken from it)"""
+    gross = to_decimal(gross)
+    return (gross - gross * PLATFORM_FEE).quantize(Decimal('0.01'))
+
+
 def credit_artisan(booking):
     """Adds the artisan's share of a fully paid job to their wallet and records the earning"""
     gross = to_decimal(booking.agreed_amount or booking.budget)
-    platform_fee = (gross * PLATFORM_FEE).quantize(Decimal('0.01'))
-    vat = (gross * VAT_RATE).quantize(Decimal('0.01'))
-    net_amount = (gross - platform_fee).quantize(Decimal('0.01'))
+    net_amount = artisan_share(gross)
+    platform_fee = gross - net_amount
+    vat = Decimal('0.00')
 
     artisan = User.objects.select_for_update().get(pk=booking.artisan_id)
     artisan.wallet_balance = (artisan.wallet_balance + net_amount).quantize(Decimal('0.01'))
@@ -631,13 +636,19 @@ def paystack_webhook(request):
         logger.error("Invalid JSON in webhook payload")
         return Response(status=400)
 
-    if payload.get('event') != 'charge.success':
+    event = payload.get('event', '')
+    if event != 'charge.success' and not event.startswith('transfer.'):
         return Response({"message": "Event ignored"}, status=200)
     data = payload.get('data', {})
     if not data.get('reference'):
         return Response(status=400)
     try:
-        record_payment(data['reference'], data.get('amount', 0))
+        if event == 'charge.success':
+            record_payment(data['reference'], data.get('amount', 0))
+        else:
+            # Withdrawals to artisans' banks (imported here: payouts builds on this module)
+            from services.views.payouts import record_transfer
+            record_transfer(event, data)
     except Exception:
         # Answer with an error so Paystack retries; record_payment is safe to run again
         logger.exception(f"Error processing webhook for {data['reference']}")
@@ -738,10 +749,7 @@ class ArtisanEarningsView(APIView):
         })
 
     def calculate_net(self, gross):
-        gross = to_decimal(gross)
-        platform_fee = gross * Decimal('0.10')
-        vat = gross * Decimal('0.075')
-        return (gross - platform_fee - vat).quantize(Decimal('0.01'))
+        return artisan_share(gross)
 
 
 # ─────────────────────────────────────────────
@@ -751,10 +759,7 @@ class ArtisanPaymentsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def calculate_net(self, gross):
-        gross = to_decimal(gross)
-        platform_fee = gross * Decimal('0.10')
-        vat = gross * Decimal('0.075')
-        return float((gross - platform_fee - vat).quantize(Decimal('0.01')))
+        return float(artisan_share(gross))
 
     def get(self, request):
         try:
@@ -875,12 +880,7 @@ class ArtisanEarningsFilterView(APIView):
         })
 
     def calculate_net(self, gross):
-        if not gross:
-            return Decimal('0.00')
-        gross = Decimal(str(gross))
-        platform_fee = gross * Decimal('0.10')
-        vat = gross * Decimal('0.075')
-        return float((gross - platform_fee - vat).quantize(Decimal('0.01')))
+        return float(artisan_share(gross))
 
 
 # from . import BookArtisan, ArtisanBookingSerializers, User

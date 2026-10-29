@@ -1,4 +1,5 @@
 from main.models import User, Skill, BankDetails, OnboardingLevel, Rating, Notification
+from main.paystack import PaystackError, bank_code_for, create_recipient, resolve_account
 from services.models.services_models import Services
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -10,6 +11,7 @@ import logging
 import json
 import ast
 from django.core.validators import FileExtensionValidator
+from django.utils import timezone
 
 logger = logging.getLogger('main')
 
@@ -130,11 +132,48 @@ class SkillSerializer(serializers.ModelSerializer):
 
 
 class BankDetailSerializer(serializers.ModelSerializer):
+    """
+    An artisan's payout account. Saving it checks the account with Paystack: the holder's name comes
+    from the bank (whatever was typed is replaced), and the account is registered for transfers.
+    """
     artisan = serializers.PrimaryKeyRelatedField(read_only=True)
+    # Older app builds only send the bank's name; its code is then looked up
+    bank_code = serializers.CharField(max_length=10, required=False, allow_blank=True)
+    account_name = serializers.CharField(max_length=350, required=False, allow_blank=True)
+    verified = serializers.SerializerMethodField()
 
     class Meta:
         model = BankDetails
-        fields = ("id", "artisan", "name", "account_name", "account_number", "payment_on_delivery", "escrow_payment")
+        fields = ("id", "artisan", "name", "bank_code", "account_name", "account_number", "verified",
+                  "payment_on_delivery", "escrow_payment")
+
+    def get_verified(self, bank_details):
+        return bool(bank_details.recipient_code)
+
+    def validate_account_number(self, value):
+        if not re.fullmatch(r"\d{10}", value or ""):
+            raise serializers.ValidationError("Account number must be exactly 10 digits.")
+        return value
+
+    def validate(self, attrs):
+        current = self.instance
+        name = attrs.get("name", current.name if current else "")
+        account_number = attrs.get("account_number", current.account_number if current else "")
+        bank_code = attrs.get("bank_code") or (current.bank_code if current and "name" not in attrs else "")
+        unchanged = (current and current.recipient_code and account_number == current.account_number
+                     and (not bank_code or bank_code == current.bank_code) and name == current.name)
+        if unchanged:
+            return attrs
+        try:
+            bank_code = bank_code or bank_code_for(name)
+            if not bank_code:
+                raise serializers.ValidationError({"name": "We don't recognise this bank. Please pick it from the list."})
+            account_name = resolve_account(account_number, bank_code)
+            recipient_code = create_recipient(account_name, account_number, bank_code)
+        except PaystackError as error:
+            raise serializers.ValidationError({"account_number": f"We couldn't verify this account: {error}"})
+        attrs.update(bank_code=bank_code, account_name=account_name, recipient_code=recipient_code, verified_at=timezone.now())
+        return attrs
 
     def create(self, validated_data):
         artisan = self.context['request'].user

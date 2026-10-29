@@ -161,6 +161,11 @@ class BankDetails(models.Model):
     name = models.CharField(max_length=100)
     account_number = models.CharField(max_length=10)
     account_name = models.CharField(max_length=350)
+    # Paystack's code for the bank; withdrawals need it, and older records may not have one yet
+    bank_code = models.CharField(max_length=10, blank=True, default="")
+    # The account registered with Paystack for transfers, once its holder's name has been checked
+    recipient_code = models.CharField(max_length=50, blank=True, default="")
+    verified_at = models.DateTimeField(null=True, blank=True)
     payment_on_delivery = models.BooleanField(default=False)
     escrow_payment = models.BooleanField(default=False)
     
