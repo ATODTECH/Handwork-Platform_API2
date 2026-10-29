@@ -34,6 +34,15 @@ paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 # ─────────────────────────────────────────────
 # BOOK ARTISAN VIEWSET
 # ─────────────────────────────────────────────
+# The only status changes an artisan may make; payments move the others (deposit and balance webhooks)
+ARTISAN_TRANSITIONS = {
+    ("Pending", "Accepted"),
+    ("Pending", "Declined"),
+    ("Deposit Paid", "In Progress"),
+    ("In Progress", "Completed"),
+}
+
+
 class BookArtisanViewSet(viewsets.ModelViewSet):
     queryset = BookArtisan.objects.select_related('client', 'artisan').prefetch_related('services')
     serializer_class = ArtisanBookingSerializers
@@ -86,19 +95,35 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
             )
 
         old_status = booking.status
+        new_status = request.data.get('status', old_status)
+        if (old_status, new_status) not in ARTISAN_TRANSITIONS:
+            return response.Response(
+                {"detail": f"A booking that is {old_status} can't be changed to {new_status}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # The price is agreed once, when accepting
+        if new_status == "Accepted":
+            try:
+                agreed = Decimal(str(request.data.get('agreed_amount') or 0))
+            except InvalidOperation:
+                agreed = Decimal(0)
+            if agreed <= 0:
+                return response.Response(
+                    {"agreed_amount": ["Enter the price you agree to do the job for."]},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        elif 'agreed_amount' in request.data:
+            return response.Response(
+                {"detail": "The price can only be set when accepting."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
         serializer = self.get_serializer(booking, data=request.data, partial=True)
         if not serializer.is_valid():
             return response.Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         updated_booking = serializer.save()
-        new_status = updated_booking.status
 
-        if new_status == "Accepted" and old_status == "Pending":
-            if not updated_booking.agreed_amount:
-                return response.Response(
-                    {"detail": "agreed_amount is required when accepting."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        if new_status == "Accepted":
             Notification.objects.create(
                 recipient=updated_booking.client,
                 message=f"Your booking has been accepted by {booking.artisan.first_name}. "
@@ -106,13 +131,19 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
                         f"Please pay deposit of ₦{updated_booking.deposit_amount:,} to proceed.",
                 notification_type='PAYMENT'
             )
-        elif new_status == "In Progress" and old_status == "Deposit Paid":
+        elif new_status == "Declined":
+            Notification.objects.create(
+                recipient=updated_booking.client,
+                message=f"{booking.artisan.first_name} can't take your booking. You can book another artisan.",
+                notification_type='BOOKING'
+            )
+        elif new_status == "In Progress":
             Notification.objects.create(
                 recipient=updated_booking.client,
                 message="The artisan has started working on your job.",
                 notification_type='BOOKING'
             )
-        elif new_status == "Completed" and old_status == "In Progress":
+        elif new_status == "Completed":
             Notification.objects.create(
                 recipient=updated_booking.client,
                 message=f"The job has been marked as completed by the artisan. "
