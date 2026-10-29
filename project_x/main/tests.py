@@ -634,3 +634,38 @@ class WithdrawalTests(ApiTestCase):
         self.assertEqual(Decimal(str(wallet["total_earned"])), 9000)
         self.assertTrue(wallet["has_open_withdrawal"] and wallet["bank"]["verified"])
         self.assertEqual([item["kind"] for item in wallet["activity"]], ["withdrawal", "earning"])
+
+
+class AdminOverviewTests(ApiTestCase):
+    def setUp(self):
+        self.staff = make_user("staff@example.com", is_staff=True)
+        self.customer = make_user("chi@example.com")
+        self.approved = make_user("ada@example.com", role="ARTISAN", onboardingComplete=True, verification_status="APPROVED")
+        self.waiting = make_user("bola@example.com", role="ARTISAN", onboardingComplete=True)
+        make_user("eze@example.com", role="ARTISAN")
+        held = BookArtisan.objects.create(client=self.customer, artisan=self.approved, description="x", status="Paid", agreed_amount=20000)
+        done = BookArtisan.objects.create(client=self.customer, artisan=self.approved, description="y", status="Released", agreed_amount=10000)
+        Transaction.objects.create(artisan=self.approved, booking=done, gross_amount=10000, platform_fee=1000, vat=0,
+                                   net_amount=9000, transaction_type="EARNING")
+        Withdrawal.objects.create(artisan=self.approved, amount=5000, bank_name="GTBank", account_number="1111111111",
+                                  account_name="ADA", recipient_code="RCP_1", reference="withdrawal_1")
+        self.held = held
+
+    def test_staff_only(self):
+        self.assertEqual(self.client.get("/api/admin/overview").status_code, 401)
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(self.client.get("/api/admin/overview").status_code, 403)
+
+    def test_figures_and_lists(self):
+        self.client.force_authenticate(self.staff)
+        overview = self.data(self.client.get("/api/admin/overview"))
+        self.assertEqual(Decimal(str(overview["revenue"]["this_month"])), 1000)
+        self.assertEqual((Decimal(str(overview["held"]["amount"])), overview["held"]["bookings"]), (20000, 1))
+        self.assertEqual(overview["customers"], {"total": 1, "new_this_month": 1})
+        self.assertEqual(overview["artisans"], {"approved": 1, "awaiting_review": 1, "onboarding": 1})
+        self.assertEqual((overview["bookings"]["this_month"], overview["bookings"]["active"]), (2, 1))
+        self.assertEqual(overview["withdrawals"]["pending"], 1)
+        self.assertEqual([a["id"] for a in overview["artisans_awaiting_review"]], [str(self.waiting.id)])
+        self.assertEqual(overview["withdrawals_awaiting_approval"][0]["artisan"], "Ada Test")
+        self.assertEqual(len(overview["recent_bookings"]), 2)
+        self.assertNotIn("staff@example.com", [user["email"] for user in overview["recent_users"]])
