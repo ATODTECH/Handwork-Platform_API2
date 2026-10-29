@@ -11,6 +11,7 @@ from main.views.user_auth import (
 )
 from main.views.admin_artisans import AdminArtisanViewSet
 from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
+from services.views.admin_overview import admin_overview
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_booking, verify_booking_payment, confirm_booking, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -49,6 +50,7 @@ urlpatterns = [
     path('api/toggle_availability', toggle_availability, name="toggle-switch"),
     path('api/bookings', get_today_bookings, name="today-bookings"),
     path('api/wallet', wallet, name='wallet'),
+    path('api/admin/overview', admin_overview, name='admin-overview'),
     path('api/book/<int:pk>/pay', pay_booking, name='pay-booking'),
     path('api/book/<int:pk>/verify-payment', verify_booking_payment, name='verify-booking-payment'),
     path('api/book/<int:pk>/confirm', confirm_booking, name='confirm-booking'),
