@@ -10,6 +10,7 @@ from main.views.user_auth import (
     ForgotPasswordRequestOTP, ForgotPasswordVerifyOTP
 )
 from main.views.admin_artisans import AdminArtisanViewSet
+from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_booking, verify_booking_payment, confirm_booking, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -32,6 +33,8 @@ router.register("my_bookings/filter", MyFilteredBookings, basename='filtered-boo
 router.register("notifications", NotificationViewSet, basename='notifications')
 router.register("material_quotes", MaterialQuoteViewSet, basename='material-quote')
 router.register("admin/artisans", AdminArtisanViewSet, basename="admin-artisans")
+router.register("withdrawals", WithdrawalViewSet, basename="withdrawals")
+router.register("admin/withdrawals", AdminWithdrawalViewSet, basename="admin-withdrawals")
 
 urlpatterns = [
     path('', health_check, name='health-check'),
@@ -45,6 +48,7 @@ urlpatterns = [
     path('api/my_bookings', get_my_bookings, name='user-bookings'),
     path('api/toggle_availability', toggle_availability, name="toggle-switch"),
     path('api/bookings', get_today_bookings, name="today-bookings"),
+    path('api/wallet', wallet, name='wallet'),
     path('api/book/<int:pk>/pay', pay_booking, name='pay-booking'),
     path('api/book/<int:pk>/verify-payment', verify_booking_payment, name='verify-booking-payment'),
     path('api/book/<int:pk>/confirm', confirm_booking, name='confirm-booking'),

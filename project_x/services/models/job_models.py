@@ -117,3 +117,41 @@ class Transaction(models.Model):
 
     def __str__(self):
         return f"{self.artisan.email} - ₦{self.net_amount} ({self.transaction_type})"
+
+
+class Withdrawal(models.Model):
+    """
+    An artisan moving money from their wallet to their bank. The amount leaves the wallet when they ask;
+    staff approve it, Paystack sends it, and a failure or rejection puts it back.
+    """
+    STATUS = (
+        ("PENDING", "Waiting for staff"),
+        ("PROCESSING", "Sent to Paystack"),
+        ("PAID", "Paid"),
+        ("FAILED", "Failed"),
+        ("REJECTED", "Rejected"),
+    )
+    artisan = models.ForeignKey(User, on_delete=models.PROTECT, related_name='withdrawals')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=12, choices=STATUS, default="PENDING")
+    # The account it goes to, as it was when requested
+    bank_name = models.CharField(max_length=100)
+    account_number = models.CharField(max_length=10)
+    account_name = models.CharField(max_length=350)
+    recipient_code = models.CharField(max_length=50)
+    # Our reference for the Paystack transfer, and Paystack's own code for it
+    reference = models.CharField(max_length=50, unique=True)
+    transfer_code = models.CharField(max_length=50, blank=True, default="")
+    # Why it was rejected or failed
+    note = models.TextField(blank=True, default="")
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.artisan.email} - ₦{self.amount} ({self.status})"
+

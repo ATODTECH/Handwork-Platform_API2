@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+from decimal import Decimal
 from datetime import timedelta
 from unittest import mock
 
@@ -12,8 +13,9 @@ from rest_framework.test import APITestCase
 from rest_framework import serializers as drf_serializers
 
 from main.models import BankDetails, Notification, Rating, Skill, User
+from main.paystack import PaystackError
 from services.models.services_models import Services
-from services.models.job_models import Transaction
+from services.models.job_models import BookArtisan, Transaction, Withdrawal
 from services.serializers.job_serializers import ArtisanBookingSerializers
 from services.views.job_process import record_payment
 
@@ -183,7 +185,10 @@ class BankDetailTests(ApiTestCase):
         self.other_bank.refresh_from_db()
         self.assertEqual(self.other_bank.account_number, "0000000001")
 
-    def test_create_always_belongs_to_the_signed_in_artisan(self):
+    @mock.patch("main.serializers.auth_serializers.create_recipient", return_value="RCP_1")
+    @mock.patch("main.serializers.auth_serializers.resolve_account", return_value="ADA TEST")
+    @mock.patch("main.serializers.auth_serializers.bank_code_for", return_value="058")
+    def test_create_always_belongs_to_the_signed_in_artisan(self, *_):
         self.client.force_authenticate(self.artisan)
         response = self.client.post("/api/bank_details", {
             "name": "My Bank", "account_number": "1111111111", "account_name": "Ada Test",
@@ -191,6 +196,27 @@ class BankDetailTests(ApiTestCase):
         })
         self.assertEqual(response.status_code, 201, response.content)
         self.assertTrue(BankDetails.objects.filter(artisan=self.artisan, name="My Bank").exists())
+
+    @mock.patch("main.serializers.auth_serializers.create_recipient", return_value="RCP_1")
+    @mock.patch("main.serializers.auth_serializers.resolve_account", return_value="ADA OKAFOR TEST")
+    def test_account_name_comes_from_the_bank(self, resolve, _):
+        self.client.force_authenticate(self.artisan)
+        response = self.client.post("/api/bank_details", {
+            "name": "GTBank", "bank_code": "058", "account_number": "1111111111", "account_name": "Someone Else",
+        })
+        self.assertEqual(response.status_code, 201, response.content)
+        bank = BankDetails.objects.get(artisan=self.artisan)
+        self.assertEqual((bank.account_name, bank.bank_code, bank.recipient_code), ("ADA OKAFOR TEST", "058", "RCP_1"))
+        self.assertTrue(self.data(response)["verified"])
+        resolve.assert_called_once_with("1111111111", "058")
+
+    @mock.patch("main.serializers.auth_serializers.resolve_account", side_effect=PaystackError("Could not resolve account name."))
+    def test_accounts_paystack_cant_find_are_refused(self, _):
+        self.client.force_authenticate(self.artisan)
+        response = self.client.post("/api/bank_details", {"name": "GTBank", "bank_code": "058", "account_number": "1111111111"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Could not resolve", str(response.content))
+        self.assertFalse(BankDetails.objects.filter(artisan=self.artisan).exists())
 
 
 class RatingAndLogsTests(ApiTestCase):
@@ -483,3 +509,128 @@ class PaymentTests(BookingTestCase):
         old.refresh_from_db()
         recent.refresh_from_db()
         self.assertEqual((old.status, recent.status), ("Released", "Completed"))
+
+
+class WithdrawalTests(ApiTestCase):
+    """Artisans withdraw from their wallet; staff approve; Paystack sends it"""
+
+    def setUp(self):
+        self.staff = make_user("staff@example.com", is_staff=True)
+        self.artisan = make_user("ada@example.com", role="ARTISAN", onboardingComplete=True, verification_status="APPROVED")
+        self.artisan.wallet_balance = Decimal("20000")
+        self.artisan.save()
+        self.bank = BankDetails.objects.create(
+            artisan=self.artisan, name="GTBank", bank_code="058", account_number="1111111111",
+            account_name="ADA TEST", recipient_code="RCP_1",
+        )
+
+    def withdraw(self, amount="5000"):
+        self.client.force_authenticate(self.artisan)
+        return self.client.post("/api/withdrawals", {"amount": amount}, format="json")
+
+    def approve(self, withdrawal, transfer=None, error=None):
+        self.client.force_authenticate(self.staff)
+        with mock.patch("services.views.payouts.send_transfer", return_value=transfer, side_effect=error) as send:
+            response = self.client.post(f"/api/admin/withdrawals/{withdrawal.id}/approve")
+        return response, send
+
+    def webhook(self, event, reference):
+        body = json.dumps({"event": event, "data": {"reference": reference}}).encode()
+        signature = hmac.new(settings.PAYSTACK_SECRET_KEY.encode(), body, hashlib.sha512).hexdigest()
+        self.client.post("/api/paystack/webhook/", body, content_type="application/json", HTTP_X_PAYSTACK_SIGNATURE=signature)
+
+    def balance(self):
+        self.artisan.refresh_from_db()
+        return self.artisan.wallet_balance
+
+    def test_requesting_holds_the_money(self):
+        self.assertEqual(self.withdraw().status_code, 201)
+        self.assertEqual(self.balance(), 15000)
+        withdrawal = Withdrawal.objects.get()
+        self.assertEqual((withdrawal.status, withdrawal.recipient_code), ("PENDING", "RCP_1"))
+        self.assertTrue(withdrawal.reference.startswith("withdrawal_"))
+
+    def test_limits(self):
+        self.assertEqual(self.withdraw("500").status_code, 400)
+        self.assertEqual(self.withdraw("25000").status_code, 400)
+        self.assertEqual(self.withdraw("5000").status_code, 201)
+        self.assertEqual(self.withdraw("1000").status_code, 400)
+        self.assertEqual(self.balance(), 15000)
+
+    def test_customers_cannot_withdraw(self):
+        self.client.force_authenticate(make_user("chi@example.com"))
+        self.assertEqual(self.client.post("/api/withdrawals", {"amount": "5000"}).status_code, 403)
+
+    def test_old_bank_details_are_verified_on_first_withdrawal(self):
+        self.bank.bank_code, self.bank.recipient_code = "", ""
+        self.bank.save()
+        with mock.patch("services.views.payouts.bank_code_for", return_value="058"), \
+                mock.patch("services.views.payouts.resolve_account", return_value="ADA OKAFOR"), \
+                mock.patch("services.views.payouts.create_recipient", return_value="RCP_2"):
+            self.assertEqual(self.withdraw().status_code, 201)
+        self.bank.refresh_from_db()
+        self.assertEqual((self.bank.recipient_code, Withdrawal.objects.get().account_name), ("RCP_2", "ADA OKAFOR"))
+
+    def test_only_staff_approve(self):
+        self.withdraw()
+        self.assertEqual(self.client.post(f"/api/admin/withdrawals/{Withdrawal.objects.get().id}/approve").status_code, 403)
+
+    def test_approving_sends_the_transfer_once(self):
+        self.withdraw()
+        withdrawal = Withdrawal.objects.get()
+        response, send = self.approve(withdrawal, transfer={"status": "pending", "transfer_code": "TRF_1"})
+        self.assertEqual(self.data(response)["status"], "PROCESSING")
+        send.assert_called_once_with(Decimal("5000.00"), "RCP_1", withdrawal.reference, "Handwork Expert earnings")
+        response, send = self.approve(withdrawal, transfer={"status": "pending"})
+        self.assertEqual(response.status_code, 400)
+        send.assert_not_called()
+
+    def test_transfer_webhooks_settle_it(self):
+        self.withdraw()
+        withdrawal = Withdrawal.objects.get()
+        self.approve(withdrawal, transfer={"status": "pending", "transfer_code": "TRF_1"})
+        self.webhook("transfer.success", withdrawal.reference)
+        self.webhook("transfer.success", withdrawal.reference)
+        withdrawal.refresh_from_db()
+        self.assertEqual(withdrawal.status, "PAID")
+        self.assertEqual(self.balance(), 15000)
+
+    def test_failed_transfers_are_refunded_once(self):
+        self.withdraw()
+        withdrawal = Withdrawal.objects.get()
+        self.approve(withdrawal, transfer={"status": "pending", "transfer_code": "TRF_1"})
+        self.webhook("transfer.failed", withdrawal.reference)
+        self.webhook("transfer.failed", withdrawal.reference)
+        withdrawal.refresh_from_db()
+        self.assertEqual((withdrawal.status, self.balance()), ("FAILED", 20000))
+
+    def test_paystack_refusing_the_transfer_refunds_it(self):
+        self.withdraw()
+        response, _ = self.approve(Withdrawal.objects.get(), error=PaystackError("Insufficient balance"))
+        self.assertEqual(self.data(response)["status"], "FAILED")
+        self.assertIn("Insufficient balance", self.data(response)["note"])
+        self.assertEqual(self.balance(), 20000)
+
+    def test_rejecting_refunds_it(self):
+        self.withdraw()
+        withdrawal = Withdrawal.objects.get()
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.post(f"/api/admin/withdrawals/{withdrawal.id}/reject").status_code, 400)
+        response = self.client.post(f"/api/admin/withdrawals/{withdrawal.id}/reject", {"reason": "Bank name mismatch."})
+        self.assertEqual(self.data(response)["status"], "REJECTED")
+        self.assertEqual(self.balance(), 20000)
+        counts = self.data(self.client.get("/api/admin/withdrawals/counts"))
+        self.assertEqual(counts, {"pending": 0, "processing": 0, "paid": 0, "unsuccessful": 1})
+
+    def test_wallet_summary(self):
+        customer = make_user("chi@example.com")
+        held = BookArtisan.objects.create(client=customer, artisan=self.artisan, description="x", status="Paid", agreed_amount=10000)
+        Transaction.objects.create(artisan=self.artisan, booking=held, gross_amount=10000, platform_fee=1000, vat=0,
+                                   net_amount=9000, transaction_type="EARNING")
+        self.withdraw()
+        wallet = self.data(self.client.get("/api/wallet"))
+        self.assertEqual(Decimal(str(wallet["available"])), 15000)
+        self.assertEqual(Decimal(str(wallet["on_the_way"])), 9000)
+        self.assertEqual(Decimal(str(wallet["total_earned"])), 9000)
+        self.assertTrue(wallet["has_open_withdrawal"] and wallet["bank"]["verified"])
+        self.assertEqual([item["kind"] for item in wallet["activity"]], ["withdrawal", "earning"])

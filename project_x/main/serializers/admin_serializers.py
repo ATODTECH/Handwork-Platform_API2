@@ -5,9 +5,15 @@ from main.serializers.auth_serializers import SkillSerializer
 
 
 class AdminBankDetailsSerializer(serializers.ModelSerializer):
+    verified = serializers.SerializerMethodField()
+
     class Meta:
         model = BankDetails
-        fields = ("name", "account_number", "account_name")
+        fields = ("name", "account_number", "account_name", "verified")
+
+    def get_verified(self, bank_details):
+        """Checked with Paystack and ready for transfers"""
+        return bool(bank_details.recipient_code)
 
 
 class AdminArtisanSerializer(serializers.ModelSerializer):
