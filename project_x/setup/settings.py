@@ -224,13 +224,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'main.User'
 
 
-# Email Configuration (Resend via SMTP)
-EMAIL_BACKEND = env('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = env('EMAIL_HOST', default='smtp.resend.com')
-EMAIL_PORT = env.int('EMAIL_PORT', default=587)
-EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
-EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='resend')
-EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
+# Email: Resend's HTTP API (main/emails.py). The SMTP password used before was the Resend API key,
+# so it's still accepted until RESEND_API_KEY is set.
+EMAIL_BACKEND = env('EMAIL_BACKEND', default='main.emails.ResendEmailBackend')
+RESEND_API_KEY = env('RESEND_API_KEY', default=env('EMAIL_HOST_PASSWORD', default=''))
+# Send from a background thread so requests don't wait on Resend (off in tests)
+EMAIL_IN_BACKGROUND = env.bool('EMAIL_IN_BACKGROUND', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='support@handworkexpert.com')
 
 

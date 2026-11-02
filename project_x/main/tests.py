@@ -6,12 +6,17 @@ from datetime import timedelta
 from unittest import mock
 
 from django.conf import settings
+from django.core import mail
+from django.core.cache import cache
+from django.core.mail import EmailMultiAlternatives
 from django.core.management import call_command
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from rest_framework import serializers as drf_serializers
 
+from main.emails import ResendEmailBackend, ResendError, send_email
 from main.models import BankDetails, Notification, Rating, Skill, User
 from main.paystack import PaystackError
 from services.models.services_models import Services
@@ -778,3 +783,41 @@ class AdminOverviewTests(ApiTestCase):
         self.assertEqual(overview["withdrawals_awaiting_approval"][0]["artisan"], "Ada Test")
         self.assertEqual(len(overview["recent_bookings"]), 2)
         self.assertNotIn("staff@example.com", [user["email"] for user in overview["recent_users"]])
+
+
+class EmailTests(ApiTestCase):
+    """Emails go through Resend's HTTP API; a failed send is logged, never raised to the request"""
+
+    @override_settings(EMAIL_BACKEND="main.emails.ResendEmailBackend", RESEND_API_KEY="re_test", EMAIL_IN_BACKGROUND=False)
+    @mock.patch("main.emails.requests.post")
+    def test_sends_through_resend(self, post):
+        post.return_value = mock.Mock(status_code=200, json=lambda: {"id": "email_1"})
+        send_email("chi@example.com", "Hello", "Plain text", html="<p>Hi</p>")
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(post.call_args.args[0], "https://api.resend.com/emails")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer re_test")
+        self.assertTrue(post.call_args.kwargs["timeout"])
+        self.assertEqual(payload["to"], ["chi@example.com"])
+        self.assertEqual((payload["subject"], payload["text"], payload["html"]), ("Hello", "Plain text", "<p>Hi</p>"))
+        self.assertEqual(payload["from"], settings.DEFAULT_FROM_EMAIL)
+
+    @override_settings(EMAIL_BACKEND="main.emails.ResendEmailBackend", RESEND_API_KEY="re_test", EMAIL_IN_BACKGROUND=False)
+    @mock.patch("main.emails.requests.post")
+    def test_refused_send_is_logged_not_raised(self, post):
+        post.return_value = mock.Mock(status_code=422, text='{"message": "domain not verified"}')
+        with self.assertLogs("main", level="ERROR"):
+            send_email("chi@example.com", "Hello", "Plain text")
+        with self.assertRaises(ResendError):
+            EmailMultiAlternatives("Hello", "Plain text", to=["chi@example.com"], connection=ResendEmailBackend()).send()
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_IN_BACKGROUND=False)
+    def test_password_reset_code_is_emailed(self):
+        make_user("chi@example.com")
+        self.assertEqual(self.client.post("/api/forgot-password/request-otp", {"email": "chi@example.com"}).status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(cache.get("password_reset_otp_chi@example.com"), mail.outbox[0].body)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_IN_BACKGROUND=False)
+    def test_unknown_email_gets_the_same_answer_and_no_email(self):
+        self.assertEqual(self.client.post("/api/forgot-password/request-otp", {"email": "nobody@example.com"}).status_code, 200)
+        self.assertEqual(mail.outbox, [])
