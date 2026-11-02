@@ -39,6 +39,11 @@ cp .env.example .env
 
 ## Then, edit `.env` and add necessary environment variables.
 
+**Email** goes through Resend's HTTP API (`main/emails.py`), sent in the background so requests don't wait:
+- `RESEND_API_KEY`: the Resend API key. If it's not set, `EMAIL_HOST_PASSWORD` (the key used when email went over Resend's SMTP) is used instead.
+- `DEFAULT_FROM_EMAIL`: must be on a domain verified in Resend (default `support@handworkexpert.com`).
+- `EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend` prints emails instead of sending them (local testing); the tests use `locmem`.
+
 ### **5. Set Up the Database**
 
 Run migrations to set up the database schema:

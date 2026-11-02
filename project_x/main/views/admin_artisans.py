@@ -1,13 +1,12 @@
 import logging
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from rest_framework import response, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 
+from main.emails import send_email
 from main.models import Notification, Skill, User
 from main.serializers.admin_serializers import AdminArtisanSerializer, RejectArtisanSerializer
 
@@ -24,16 +23,7 @@ STATUS_FILTERS = {
 
 def notify_artisan(artisan, message, subject):
     Notification.objects.create(recipient=artisan, message=message, notification_type="VERIFICATION")
-    try:
-        send_mail(
-            subject=subject,
-            message=f"Hi {artisan.first_name},\n\n{message}\n\nThe Handwork Expert team",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[artisan.email],
-            fail_silently=True,
-        )
-    except Exception as error:
-        logger.error(f"Failed to send verification email to {artisan.email}: {error}")
+    send_email(artisan.email, subject, f"Hi {artisan.first_name},\n\n{message}\n\nThe Handwork Expert team")
 
 
 class AdminArtisanViewSet(viewsets.ReadOnlyModelViewSet):

@@ -17,8 +17,7 @@ from django.core.cache import cache
 import re
 from django.shortcuts import get_object_or_404
 from django.http import Http404
-from django.core.mail import send_mail
-from django.conf import settings
+from main.emails import send_email
 
 logger = logging.getLogger('main')
 
@@ -49,16 +48,11 @@ class SignUpUserView(viewsets.ModelViewSet):
                     message=f"Welcome, {user.first_name}! Your account has been created.",
                     notification_type='SIGNUP'
                 )
-                try:
-                    send_mail(
-                        subject='Welcome to Handwork Expert!',
-                        message=f"Hi {user.first_name},\n\nYour account has been created successfully.\n\nWelcome to Handwork Expert!",
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        recipient_list=[user.email],
-                        fail_silently=True,
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send welcome email to {user.email}: {str(e)}")
+                send_email(
+                    user.email,
+                    'Welcome to Handwork Expert!',
+                    f"Hi {user.first_name},\n\nYour account has been created successfully.\n\nWelcome to Handwork Expert!",
+                )
 
                 logger.info(f"User created: {serializer.data['email']} (ID: {serializer.data['id']})")
             except IntegrityError as e:
@@ -94,17 +88,11 @@ class ForgotPasswordRequestOTP(APIView):
         cache_key = f"password_reset_otp_{email}"
         cache.set(cache_key, otp, timeout=600)
 
-        try:
-            send_mail(
-                subject='Your Password Reset OTP - Handwork Expert',
-                message=f"Hi {user.first_name},\n\nYour OTP for password reset is: {otp}\n\nThis OTP expires in 10 minutes.\n\nIf you did not request this, please ignore this email.",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
-            logger.info(f"OTP sent to {email}")
-        except Exception as e:
-            logger.error(f"Failed to send OTP email to {email}: {str(e)}")
+        send_email(
+            user.email,
+            'Your password reset code - Handwork Expert',
+            f"Hi {user.first_name},\n\nYour code to reset your password is: {otp}\n\nIt expires in 10 minutes.\n\nIf you didn't ask to reset your password, you can ignore this email.",
+        )
 
         return response.Response(
             {"message": "If this email exists, an OTP has been sent."},
@@ -203,16 +191,11 @@ class ResetPassword(APIView):
             notification_type='PASSWORD_RESET'
         )
 
-        try:
-            send_mail(
-                subject='Password Reset Successful - Handwork Expert',
-                message=f"Hi {user.first_name},\n\nYour password has been reset successfully.\n\nIf you did not do this, please contact support immediately.",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send password reset email to {email}: {str(e)}")
+        send_email(
+            user.email,
+            'Password Reset Successful - Handwork Expert',
+            f"Hi {user.first_name},\n\nYour password has been reset successfully.\n\nIf you did not do this, please contact support immediately.",
+        )
 
         logger.info(f"Password reset successful for {email}")
         return response.Response(
