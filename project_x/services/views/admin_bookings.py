@@ -12,6 +12,8 @@ from rest_framework import response, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 
+from chat.models import Message
+from chat.serializers import MessageSerializer
 from main.models import Notification
 from main.paystack import PaystackError, refund_charge
 from services.models.job_models import BookArtisan
@@ -46,6 +48,13 @@ class AdminBookingViewSet(viewsets.ReadOnlyModelViewSet):
         return response.Response(BookArtisan.objects.aggregate(
             all=Count("pk"), **{name: Count("pk", filter=condition) for name, condition in BOOKING_FILTERS.items()}
         ))
+
+    @action(detail=True, methods=["get"])
+    def messages(self, request, pk=None):
+        """The booking's chat, read-only for staff (e.g. to settle a reported problem)"""
+        booking = self.get_object()
+        messages = Message.objects.filter(booking=booking).select_related("sender").order_by("timestamp", "id")
+        return response.Response(MessageSerializer(messages, many=True).data)
 
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
