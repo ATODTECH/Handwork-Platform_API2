@@ -21,6 +21,11 @@ class ServiceViewSet(ModelViewSet):
     serializer_class = ServiceSerializers
     permission_classes = [IsStaffOrReadOnly]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Staff hide services from the lists customers and new artisans choose from
+        return queryset.filter(active=True) if self.action == "list" else queryset
+
 
 
 # Service Search
@@ -55,7 +60,7 @@ class CategoryViewSet(ModelViewSet):
 
 class GetServices(views.APIView):
     def get(self, request):
-        services = Services.objects.all()
+        services = Services.objects.filter(active=True)
 
         if not services.exists():
             return response.Response({"detail": "Services do not exist"}, status=status.HTTP_404_NOT_FOUND)

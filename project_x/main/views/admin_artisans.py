@@ -34,7 +34,7 @@ class AdminArtisanViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = (
-            User.objects.filter(role="ARTISAN")
+            User.objects.filter(role="ARTISAN", is_active=True)
             .select_related("verified_by", "bankdetails")
             .prefetch_related(Prefetch("skill_set", queryset=Skill.objects.prefetch_related("services")))
             .order_by("-date_joined")
@@ -44,7 +44,7 @@ class AdminArtisanViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def counts(self, request):
-        counts = User.objects.filter(role="ARTISAN").aggregate(
+        counts = User.objects.filter(role="ARTISAN", is_active=True).aggregate(
             **{name: Count("pk", filter=condition) for name, condition in STATUS_FILTERS.items()}
         )
         return response.Response(counts)

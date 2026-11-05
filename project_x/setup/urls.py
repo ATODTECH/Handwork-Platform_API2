@@ -10,6 +10,8 @@ from main.views.user_auth import (
     ForgotPasswordRequestOTP, ForgotPasswordVerifyOTP
 )
 from main.views.admin_artisans import AdminArtisanViewSet
+from main.views.admin_users import AdminUserViewSet
+from services.views.admin_services import AdminServiceViewSet
 from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
 from services.views.admin_overview import admin_overview
 from services.views.admin_bookings import AdminBookingViewSet
@@ -35,6 +37,8 @@ router.register("my_bookings/filter", MyFilteredBookings, basename='filtered-boo
 router.register("notifications", NotificationViewSet, basename='notifications')
 router.register("material_quotes", MaterialQuoteViewSet, basename='material-quote')
 router.register("admin/artisans", AdminArtisanViewSet, basename="admin-artisans")
+router.register("admin/users", AdminUserViewSet, basename="admin-users")
+router.register("admin/services", AdminServiceViewSet, basename="admin-services")
 router.register("withdrawals", WithdrawalViewSet, basename="withdrawals")
 router.register("admin/withdrawals", AdminWithdrawalViewSet, basename="admin-withdrawals")
 router.register("admin/bookings", AdminBookingViewSet, basename="admin-bookings")

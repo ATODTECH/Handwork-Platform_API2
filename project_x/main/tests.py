@@ -19,7 +19,7 @@ from rest_framework import serializers as drf_serializers
 from main.emails import ResendEmailBackend, ResendError, send_email
 from main.models import BankDetails, Notification, Rating, Skill, User
 from main.paystack import PaystackError
-from services.models.services_models import Services
+from services.models.services_models import Category, Services
 from services.models.job_models import BookArtisan, Transaction, Withdrawal
 from services.serializers.job_serializers import ArtisanBookingSerializers
 from services.views.job_process import record_payment
@@ -865,3 +865,103 @@ class DeleteAccountTests(ApiTestCase):
         Withdrawal.objects.create(artisan=self.artisan, amount=5000, bank_name="GTBank", account_number="1111111111",
                                   account_name="ADA", recipient_code="RCP_1", reference="withdrawal_1")
         self.assertEqual(self.delete_as(self.artisan).status_code, 400)
+
+
+class AdminUserTests(ApiTestCase):
+    def setUp(self):
+        self.staff = make_user("staff@example.com", is_staff=True)
+        self.customer = make_user("chi@example.com")
+        self.artisan = make_user("ada@example.com", role="ARTISAN", onboardingComplete=True, verification_status="APPROVED")
+        self.gone = make_user("gone@example.com", is_active=False)
+        BookArtisan.objects.create(client=self.customer, artisan=self.artisan, description="x", status="Paid")
+        BookArtisan.objects.create(client=self.customer, artisan=self.artisan, description="y", status="Released")
+
+    def test_staff_only(self):
+        self.assertEqual(self.client.get("/api/admin/users").status_code, 401)
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(self.client.get("/api/admin/users").status_code, 403)
+        self.assertEqual(self.client.post(f"/api/admin/users/{self.artisan.id}/deactivate", {"reason": "Because"}).status_code, 403)
+
+    def test_lists_by_type_with_booking_counts_and_no_id_numbers(self):
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.data(self.client.get("/api/admin/users/counts")), {"customers": 1, "artisans": 1, "staff": 1, "deactivated": 1})
+        customers = self.data(self.client.get("/api/admin/users?status=customers"))
+        self.assertEqual([user["email"] for user in customers], ["chi@example.com"])
+        self.assertEqual((customers[0]["bookings"], customers[0]["open_bookings"]), (2, 1))
+        self.assertEqual(self.data(self.client.get("/api/admin/users?status=artisans"))[0]["open_bookings"], 1)
+        self.assertFalse({"nin", "bvn", "document", "password"} & set(customers[0]))
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", EMAIL_IN_BACKGROUND=False)
+    def test_deactivate_and_reactivate(self):
+        self.client.force_authenticate(self.staff)
+        url = f"/api/admin/users/{self.artisan.id}"
+        self.assertEqual(self.client.post(f"{url}/deactivate", {}).status_code, 400)
+
+        self.assertEqual(self.client.post(f"{url}/deactivate", {"reason": "Fake documents"}).status_code, 200)
+        self.artisan.refresh_from_db()
+        self.assertFalse(self.artisan.is_active)
+        self.assertIn("Fake documents", mail.outbox[-1].body)
+        self.assertEqual(self.data(self.client.get("/api/artisan")), [])
+        self.assertEqual(self.client.post(f"{url}/deactivate", {"reason": "Again"}).status_code, 400)
+
+        self.assertEqual(self.client.post(f"{url}/reactivate").status_code, 200)
+        self.artisan.refresh_from_db()
+        self.assertTrue(self.artisan.is_active)
+        self.assertEqual(len(self.data(self.client.get("/api/artisan"))), 1)
+
+    def test_staff_accounts_cant_be_deactivated_here(self):
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.post(f"/api/admin/users/{self.staff.id}/deactivate", {"reason": "Oops"}).status_code, 400)
+        self.staff.refresh_from_db()
+        self.assertTrue(self.staff.is_active)
+
+
+class AdminServiceTests(ApiTestCase):
+    def setUp(self):
+        self.staff = make_user("staff@example.com", is_staff=True)
+        self.customer = make_user("chi@example.com")
+        self.artisan = make_user("ada@example.com", role="ARTISAN")
+        self.home = Category.objects.create(name="Home", description="Home")
+        self.plumbing = Services.objects.create(name="Plumbing", description="Pipes")
+        self.home.service.add(self.plumbing)
+        self.client.force_authenticate(self.staff)
+
+    def test_staff_only(self):
+        self.client.force_authenticate(self.customer)
+        self.assertEqual(self.client.get("/api/admin/services").status_code, 403)
+        self.assertEqual(self.client.post("/api/admin/services", {"name": "Spam", "description": "x"}).status_code, 403)
+
+    def test_create_edit_and_usage_counts(self):
+        response = self.client.post("/api/admin/services", {"name": "Tiling", "description": "Floors", "categories": [self.home.id]}, format="json")
+        self.assertEqual(response.status_code, 201)
+        service_id = self.data(response)["id"]
+        self.assertEqual(self.data(response)["categories"], [self.home.id])
+        self.assertTrue(self.home.service.filter(pk=service_id).exists())
+
+        duplicate = self.client.post("/api/admin/services", {"name": "tiling", "description": "Again"}, format="json")
+        self.assertEqual(duplicate.status_code, 400)
+
+        other = Category.objects.create(name="Other", description="Other")
+        edited = self.client.patch(f"/api/admin/services/{service_id}", {"name": "Floor tiling", "categories": [other.id]}, format="json")
+        self.assertEqual(edited.status_code, 200)
+        self.assertFalse(self.home.service.filter(pk=service_id).exists())
+        self.assertTrue(other.service.filter(pk=service_id).exists())
+
+    def test_hidden_services_leave_the_public_lists(self):
+        hidden = self.client.patch(f"/api/admin/services/{self.plumbing.id}", {"active": False}, format="json")
+        self.assertEqual(hidden.status_code, 200)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get("/api/get_services").status_code, 404)
+        self.assertEqual(self.data(self.client.get("/api/services")), [])
+        self.assertEqual(self.data(self.client.get("/api/category"))[0]["service"], [])
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(len(self.data(self.client.get("/api/admin/services"))), 1)
+
+    def test_a_service_in_use_cant_be_deleted(self):
+        skill = Skill.objects.create(artisan=self.artisan, description="x", base_charge=1, cap_charge=2, weekdays_and_weekends=True)
+        skill.services.set([self.plumbing])
+        self.assertEqual(self.client.delete(f"/api/admin/services/{self.plumbing.id}").status_code, 400)
+
+        skill.services.clear()
+        self.assertEqual(self.client.delete(f"/api/admin/services/{self.plumbing.id}").status_code, 204)
+        self.assertFalse(Services.objects.exists())
