@@ -34,7 +34,7 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
 
     def validate_artisan(self, artisan):
         # Only artisans staff have approved can take bookings
-        if artisan and artisan.verification_status != "APPROVED":
+        if artisan and (artisan.verification_status != "APPROVED" or not artisan.is_active):
             raise serializers.ValidationError("This artisan isn't available for bookings yet.")
         return artisan
 

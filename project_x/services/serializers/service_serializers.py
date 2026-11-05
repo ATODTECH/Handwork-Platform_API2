@@ -24,7 +24,7 @@ class ServiceSerializers(serializers.ModelSerializer):
         # Prefetch related skills and ratings to reduce the number of queries
         # Only artisans staff have approved are offered to customers
         skills_with_artisans = Skill.objects.filter(
-            services=instance, artisan__verification_status="APPROVED"
+            services=instance, artisan__verification_status="APPROVED", artisan__is_active=True
         ).select_related(
             'artisan'
         ).prefetch_related(

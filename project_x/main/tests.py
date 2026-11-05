@@ -821,3 +821,47 @@ class EmailTests(ApiTestCase):
     def test_unknown_email_gets_the_same_answer_and_no_email(self):
         self.assertEqual(self.client.post("/api/forgot-password/request-otp", {"email": "nobody@example.com"}).status_code, 200)
         self.assertEqual(mail.outbox, [])
+
+
+class DeleteAccountTests(ApiTestCase):
+    def setUp(self):
+        self.customer = make_user("chi@example.com")
+        self.artisan = make_user("ada@example.com", role="ARTISAN", onboardingComplete=True, verification_status="APPROVED")
+
+    def delete_as(self, user):
+        self.client.force_authenticate(user)
+        return self.client.delete("/api/delete-account")
+
+    def test_needs_a_signed_in_user(self):
+        self.assertEqual(self.client.delete("/api/delete-account").status_code, 401)
+
+    def test_deactivates_the_account_and_hides_the_artisan(self):
+        self.assertEqual(self.delete_as(self.artisan).status_code, 200)
+        self.artisan.refresh_from_db()
+        self.assertFalse(self.artisan.is_active)
+
+        self.client.force_authenticate(None)
+        self.assertEqual(self.data(self.client.get("/api/artisan")), [])
+        self.assertEqual(self.client.get(f"/api/artisan/{self.artisan.id}").status_code, 404)
+
+    def test_refused_while_a_booking_is_open(self):
+        booking = BookArtisan.objects.create(client=self.customer, artisan=self.artisan, description="x", status="Paid")
+        for user in (self.customer, self.artisan):
+            self.assertEqual(self.delete_as(user).status_code, 400)
+            user.refresh_from_db()
+            self.assertTrue(user.is_active)
+
+        booking.status = "Released"
+        booking.save()
+        self.assertEqual(self.delete_as(self.customer).status_code, 200)
+
+    def test_refused_while_the_artisan_has_money_with_us(self):
+        self.artisan.wallet_balance = 500
+        self.artisan.save()
+        self.assertEqual(self.delete_as(self.artisan).status_code, 400)
+
+        self.artisan.wallet_balance = 0
+        self.artisan.save()
+        Withdrawal.objects.create(artisan=self.artisan, amount=5000, bank_name="GTBank", account_number="1111111111",
+                                  account_name="ADA", recipient_code="RCP_1", reference="withdrawal_1")
+        self.assertEqual(self.delete_as(self.artisan).status_code, 400)

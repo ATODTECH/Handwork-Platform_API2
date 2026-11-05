@@ -17,7 +17,9 @@ from django.core.cache import cache
 import re
 from django.shortcuts import get_object_or_404
 from django.http import Http404
+from chat.messaging import CLOSED_STATUSES
 from main.emails import send_email
+from services.models.job_models import BookArtisan
 
 logger = logging.getLogger('main')
 
@@ -227,7 +229,7 @@ class SignUpArtisanViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         # Customers only ever find artisans staff have approved
-        return queryset.filter(verification_status="APPROVED") if self.action == "list" else queryset
+        return queryset.filter(verification_status="APPROVED", is_active=True) if self.action == "list" else queryset
 
     def get_permissions(self):
         if self.action in ("create", "list", "retrieve"):
@@ -243,7 +245,7 @@ class SignUpArtisanViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         is_owner = request.user.is_authenticated and (request.user == instance or request.user.is_staff)
-        if not is_owner and instance.verification_status != "APPROVED":
+        if not is_owner and (instance.verification_status != "APPROVED" or not instance.is_active):
             raise Http404
         serializer_class = ArtisanSerializer if is_owner else PublicArtisanSerializer
         return response.Response(serializer_class(instance, context=self.get_serializer_context()).data)
@@ -393,9 +395,21 @@ class NotificationViewSet(viewsets.ModelViewSet):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_account(request):
+    """Deactivates the account, unless a booking is still open or the artisan still has money with us"""
     user = request.user
+    open_bookings = BookArtisan.objects.filter(Q(client=user) | Q(artisan=user)).exclude(status__in=CLOSED_STATUSES)
+    if open_bookings.exists():
+        return response.Response(
+            {"detail": "You still have open bookings. Finish or cancel them before deleting your account."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if user.wallet_balance > 0 or user.withdrawals.filter(status__in=("PENDING", "PROCESSING")).exists():
+        return response.Response(
+            {"detail": "You still have money in your wallet. Withdraw it before deleting your account."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     user.is_active = False
-    user.save()
+    user.save(update_fields=["is_active"])
     logger.info(f"Account deactivated for user {user.email}")
     return response.Response(
         {"message": "Account successfully deactivated."},
