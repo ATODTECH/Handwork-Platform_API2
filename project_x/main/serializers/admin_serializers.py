@@ -51,3 +51,24 @@ class AdminArtisanSerializer(serializers.ModelSerializer):
 
 class RejectArtisanSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=1000, trim_whitespace=True)
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    """An account as staff see it. No ID numbers or documents: those stay on the artisan review."""
+
+    name = serializers.SerializerMethodField()
+    # Annotated by the view
+    bookings = serializers.IntegerField(read_only=True)
+    open_bookings = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = (
+            "id", "name", "email", "contact", "role", "is_staff", "is_active", "profile_image",
+            "address", "city", "state", "date_joined", "last_login", "verification_status",
+            "wallet_balance", "bookings", "open_bookings",
+        )
+        read_only_fields = fields
+
+    def get_name(self, user):
+        return f"{user.first_name} {user.last_name}".strip() or user.email

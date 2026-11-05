@@ -80,5 +80,28 @@ class CategorySerializers(serializers.ModelSerializer):
 
     def to_representation(self, instance):
        representation = super().to_representation(instance)
-       representation['service'] = [{'id': service_category.id, 'name':service_category.name} for service_category in instance.service.all()]
+       representation['service'] = [{'id': service_category.id, 'name':service_category.name} for service_category in instance.service.all() if service_category.active]
        return representation
+
+
+class AdminServiceSerializer(serializers.ModelSerializer):
+    """A service as staff manage it, with what uses it"""
+
+    categories = serializers.PrimaryKeyRelatedField(
+        source="service_categories", queryset=Category.objects.all(), many=True, required=False
+    )
+    # Annotated by the view; a service that was just created has neither yet
+    artisans = serializers.IntegerField(read_only=True, default=0)
+    bookings = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = Services
+        fields = ("id", "name", "description", "active", "categories", "artisans", "bookings")
+
+    def validate_name(self, value):
+        others = Services.objects.filter(name__iexact=value)
+        if self.instance is not None:
+            others = others.exclude(pk=self.instance.pk)
+        if others.exists():
+            raise serializers.ValidationError("There's already a service with this name.")
+        return value
