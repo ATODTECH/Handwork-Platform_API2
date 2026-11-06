@@ -6,7 +6,7 @@ from rest_framework import response, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 
-from main.emails import send_email
+from main.emails import greeting, send_email
 from main.models import Notification, Skill, User
 from main.serializers.admin_serializers import AdminArtisanSerializer, RejectArtisanSerializer
 
@@ -23,7 +23,7 @@ STATUS_FILTERS = {
 
 def notify_artisan(artisan, message, subject):
     Notification.objects.create(recipient=artisan, message=message, notification_type="VERIFICATION")
-    send_email(artisan.email, subject, f"Hi {artisan.first_name},\n\n{message}\n\nThe Handwork Expert team")
+    send_email(artisan.email, subject, f"{greeting(artisan)}\n\n{message}\n\nThe Handwork Expert team")
 
 
 class AdminArtisanViewSet(viewsets.ReadOnlyModelViewSet):

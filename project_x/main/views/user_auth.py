@@ -18,7 +18,7 @@ import re
 from django.shortcuts import get_object_or_404
 from django.http import Http404
 from chat.messaging import CLOSED_STATUSES
-from main.emails import send_email
+from main.emails import greeting, send_email
 from services.models.job_models import BookArtisan
 
 logger = logging.getLogger('main')
@@ -53,7 +53,7 @@ class SignUpUserView(viewsets.ModelViewSet):
                 send_email(
                     user.email,
                     'Welcome to Handwork Expert!',
-                    f"Hi {user.first_name},\n\nYour account has been created successfully.\n\nWelcome to Handwork Expert!",
+                    f"{greeting(user)}\n\nYour account has been created successfully.\n\nWelcome to Handwork Expert!",
                 )
 
                 logger.info(f"User created: {serializer.data['email']} (ID: {serializer.data['id']})")
@@ -93,7 +93,7 @@ class ForgotPasswordRequestOTP(APIView):
         send_email(
             user.email,
             'Your password reset code - Handwork Expert',
-            f"Hi {user.first_name},\n\nYour code to reset your password is: {otp}\n\nIt expires in 10 minutes.\n\nIf you didn't ask to reset your password, you can ignore this email.",
+            f"{greeting(user)}\n\nYour code to reset your password is: {otp}\n\nIt expires in 10 minutes.\n\nIf you didn't ask to reset your password, you can ignore this email.",
         )
 
         return response.Response(
@@ -196,7 +196,7 @@ class ResetPassword(APIView):
         send_email(
             user.email,
             'Password Reset Successful - Handwork Expert',
-            f"Hi {user.first_name},\n\nYour password has been reset successfully.\n\nIf you did not do this, please contact support immediately.",
+            f"{greeting(user)}\n\nYour password has been reset successfully.\n\nIf you did not do this, please contact support immediately.",
         )
 
         logger.info(f"Password reset successful for {email}")
@@ -279,6 +279,15 @@ class SkillViewSet(ViewSet):
     def retrieve(self, request, pk=None):
         skill = get_object_or_404(self.get_queryset(), pk=pk)
         serializer = SkillSerializer(skill)
+        return response.Response(serializer.data, status=status.HTTP_200_OK)
+
+    def partial_update(self, request, pk=None):
+        # An artisan only ever changes their own skill
+        skill = get_object_or_404(self.get_queryset(), pk=pk, artisan=request.user)
+        serializer = SkillSerializer(skill, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        logger.info(f"Skill {pk} updated by artisan {request.user.email}")
         return response.Response(serializer.data, status=status.HTTP_200_OK)
 
 

@@ -20,11 +20,11 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         model = BookArtisan
         fields = ('id', 'artisan', 'client', 'services', 'description', 'budget', 'agreed_amount', 'created_at',
             'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status', 'completed_at',
-            'fully_paid_at', 'released_at', 'cancelled_at', 'cancellation_reason', 'disputed_at', 'dispute_reason',
-            'resolved_at', 'resolution_note',
+            'fully_paid_at', 'deposit_amount', 'deposit_paid_at', 'released_at', 'cancelled_at', 'cancellation_reason',
+            'disputed_at', 'dispute_reason', 'resolved_at', 'resolution_note',
         )
         # The customer is whoever is signed in, never taken from the request body; the rest move with the status
-        read_only_fields = ('client', 'completed_at', 'fully_paid_at', 'released_at', 'cancelled_at', 'cancellation_reason',
+        read_only_fields = ('client', 'completed_at', 'fully_paid_at', 'deposit_amount', 'deposit_paid_at', 'released_at', 'cancelled_at', 'cancellation_reason',
                             'disputed_at', 'dispute_reason', 'resolved_at', 'resolution_note')
 
     def validate_scheduled_date(self, scheduled_date):

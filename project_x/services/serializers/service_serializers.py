@@ -23,6 +23,7 @@ class ServiceSerializers(serializers.ModelSerializer):
     def get_related_artisans(self, instance):
         # Prefetch related skills and ratings to reduce the number of queries
         # Only artisans staff have approved are offered to customers
+        # Anyone can read this without signing in, so it must never carry contact details or an address
         skills_with_artisans = Skill.objects.filter(
             services=instance, artisan__verification_status="APPROVED", artisan__is_active=True
         ).select_related(
@@ -56,10 +57,6 @@ class ServiceSerializers(serializers.ModelSerializer):
                 "description": skill.description,
                 "base_charge": skill.base_charge,
                 "cap_charge": skill.cap_charge,
-                "address": artisan.address,
-                "contact": artisan.contact,
-                "longitude": artisan.longitude,
-                "latitude": artisan.latitude,
                 "services": [{"id": service.id, "name": service.name} for service in skill.services.all()],
                 "workdays": {
                     "weekdays_and_weekends": skill.weekdays_and_weekends,

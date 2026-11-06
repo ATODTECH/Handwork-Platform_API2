@@ -3,22 +3,26 @@ import hmac
 import json
 from decimal import Decimal
 from datetime import timedelta
+from io import BytesIO
 from unittest import mock
 
 from django.conf import settings
 from django.core import mail
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.mail import EmailMultiAlternatives
 from django.core.management import call_command
 from django.test import override_settings
 from django.utils import timezone
+from PIL import Image
 from rest_framework.test import APITestCase
 
 from rest_framework import serializers as drf_serializers
 
-from main.emails import ResendEmailBackend, ResendError, send_email
+from main.emails import ResendEmailBackend, ResendError, greeting, send_email
 from main.models import BankDetails, Notification, Rating, Skill, User
 from main.paystack import PaystackError
+from main.storage import PublicSpacesStorage
 from services.models.services_models import Category, Services
 from services.models.job_models import BookArtisan, Transaction, Withdrawal
 from services.serializers.job_serializers import ArtisanBookingSerializers
@@ -76,6 +80,33 @@ class ArtisanEndpointTests(ApiTestCase):
         self.assertEqual(own["nin"], "12345678901")
         self.assertEqual(own["email"], "ada@example.com")
         self.assertNotIn("password", own)
+
+    def test_public_profile_only_gives_a_rough_location(self):
+        User.objects.filter(pk=self.artisan.pk).update(latitude="6.605874", longitude="3.349149")
+        public = self.data(self.client.get(f"/api/artisan/{self.artisan.id}"))
+        self.assertEqual((public["latitude"], public["longitude"]), ("6.61", "3.35"))
+
+        self.client.force_authenticate(self.artisan)
+        self.assertEqual(self.data(self.client.get(f"/api/artisan/{self.artisan.id}"))["latitude"], "6.605874")
+
+    def test_service_lists_hide_contact_details_without_signing_in(self):
+        User.objects.filter(pk=self.artisan.pk).update(address="3 Fadeyi Street", latitude="6.605874", longitude="3.349149")
+        service = Services.objects.create(name="Plumbing", description="Pipes")
+        skill = Skill.objects.create(artisan=self.artisan, description="Pipes", base_charge=1, cap_charge=2)
+        skill.services.set([service])
+        hidden_artisan_skill = Skill.objects.create(artisan=self.other_artisan, description="Not approved")
+        hidden_artisan_skill.services.set([service])
+
+        listed = self.data(self.client.get(f"/api/services/{service.id}"))["client"]
+        self.assertEqual([artisan["artisan_id"] for artisan in listed], [str(self.artisan.id)])
+        self.assertFalse((PRIVATE_ARTISAN_FIELDS | {"latitude", "longitude"}) & listed[0].keys())
+        self.assertEqual(listed[0]["services"], [{"id": service.id, "name": "Plumbing"}])
+
+        found = self.client.get("/api/service?search=plumb")
+        self.assertEqual(found.status_code, 200)
+        artisans = self.data(found)[0]["artisans"]
+        self.assertEqual([artisan["id"] for artisan in artisans], [str(self.artisan.id)])
+        self.assertFalse(PRIVATE_ARTISAN_FIELDS & artisans[0].keys())
 
     def test_only_the_artisan_can_update_their_record(self):
         url = f"/api/artisan/{self.artisan.id}"
@@ -965,3 +996,103 @@ class AdminServiceTests(ApiTestCase):
         skill.services.clear()
         self.assertEqual(self.client.delete(f"/api/admin/services/{self.plumbing.id}").status_code, 204)
         self.assertFalse(Services.objects.exists())
+
+
+def small_image(name="work.png"):
+    buffer = BytesIO()
+    Image.new("RGB", (4, 4)).save(buffer, format="PNG")
+    return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+
+class SkillUpdateTests(ApiTestCase):
+    def setUp(self):
+        self.artisan = make_user("ada@example.com", role="ARTISAN", verification_status="APPROVED")
+        self.plumbing = Services.objects.create(name="Plumbing", description="Pipes")
+        self.painting = Services.objects.create(name="Painting", description="Walls")
+        self.skill = Skill.objects.create(artisan=self.artisan, description="Fixing leaks", base_charge=1000, cap_charge=5000)
+        self.skill.services.set([self.plumbing])
+        self.url = f"/api/skill/{self.skill.id}"
+        self.client.force_authenticate(self.artisan)
+
+    def test_only_the_owner_can_edit(self):
+        self.client.force_authenticate(make_user("bola@example.com", role="ARTISAN"))
+        self.assertEqual(self.client.patch(self.url, {"description": "Hijacked"}, format="multipart").status_code, 404)
+        self.client.force_authenticate(make_user("chi@example.com"))
+        self.assertEqual(self.client.patch(self.url, {"description": "Hijacked"}, format="multipart").status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.patch(self.url, {"description": "Hijacked"}, format="multipart").status_code, 401)
+        self.skill.refresh_from_db()
+        self.assertEqual(self.skill.description, "Fixing leaks")
+
+    def test_edit_keeps_what_isnt_sent_and_cant_change_the_owner(self):
+        other = make_user("bola@example.com", role="ARTISAN")
+        response = self.client.patch(self.url, {"description": "Twenty years of pipes", "artisan": other.id}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.skill.refresh_from_db()
+        self.assertEqual(self.skill.description, "Twenty years of pipes")
+        self.assertEqual(self.skill.artisan, self.artisan)
+        self.assertEqual(list(self.skill.services.all()), [self.plumbing])
+        self.assertEqual(self.skill.base_charge, 1000)
+
+    def test_services_prices_and_work_days_can_change(self):
+        response = self.client.patch(self.url, {
+            "services": "[%d, %d]" % (self.plumbing.id, self.painting.id),
+            "base_charge": "2000",
+            "cap_charge": "9000",
+            "weekdays_only": "true",
+            "weekends_only": "false",
+            "weekdays_and_weekends": "false",
+        }, format="multipart")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.skill.refresh_from_db()
+        self.assertEqual(self.skill.services.count(), 2)
+        self.assertEqual(self.skill.cap_charge, 9000)
+        self.assertTrue(self.skill.weekdays_only)
+        self.assertFalse(self.skill.weekdays_and_weekends)
+
+    def test_refuses_no_services_and_a_cap_below_the_base(self):
+        self.assertEqual(self.client.patch(self.url, {"services": "[]"}, format="multipart").status_code, 400)
+        self.assertEqual(self.client.patch(self.url, {"cap_charge": "500"}, format="multipart").status_code, 400)
+
+    def test_a_hidden_service_can_be_kept_but_not_newly_picked(self):
+        Services.objects.filter(pk=self.plumbing.pk).update(active=False)
+        kept = self.client.patch(self.url, {"services": f"[{self.plumbing.id}, {self.painting.id}]"}, format="multipart")
+        self.assertEqual(kept.status_code, 200, kept.content)
+
+        self.skill.services.set([self.painting])
+        added = self.client.patch(self.url, {"services": f"[{self.plumbing.id}]"}, format="multipart")
+        self.assertEqual(added.status_code, 400)
+
+    def test_edit_after_a_rejection_goes_back_for_review_but_an_approved_artisan_stays_approved(self):
+        self.client.patch(self.url, {"description": "Still approved"}, format="multipart")
+        self.artisan.refresh_from_db()
+        self.assertEqual(self.artisan.verification_status, "APPROVED")
+
+        User.objects.filter(pk=self.artisan.pk).update(verification_status="REJECTED", verification_note="Blurry photos")
+        self.client.patch(self.url, {"description": "Better now"}, format="multipart")
+        self.artisan.refresh_from_db()
+        self.assertEqual(self.artisan.verification_status, "PENDING")
+        self.assertEqual(self.artisan.verification_note, "")
+
+    def test_photos_can_be_replaced_and_removed(self):
+        Skill.objects.filter(pk=self.skill.pk).update(image1="skill_images/old1.png", image2="skill_images/old2.png")
+        with (
+            mock.patch.object(PublicSpacesStorage, "save", return_value="skill_images/new.png") as saved,
+            mock.patch.object(PublicSpacesStorage, "delete") as deleted,
+        ):
+            response = self.client.patch(self.url, {"image1": small_image(), "image2": ""}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.skill.refresh_from_db()
+        self.assertEqual(self.skill.image1.name, "skill_images/new.png")
+        self.assertFalse(self.skill.image2)
+        saved.assert_called_once()
+        self.assertEqual({call.args[0] for call in deleted.call_args_list}, {"skill_images/old1.png", "skill_images/old2.png"})
+
+
+class EmailGreetingTests(ApiTestCase):
+    def test_uses_the_first_name_when_there_is_one(self):
+        self.assertEqual(greeting(User(first_name="Ada")), "Hi Ada,")
+
+    def test_leaves_it_out_when_there_isnt(self):
+        self.assertEqual(greeting(User(first_name="")), "Hi,")
+        self.assertEqual(greeting(User(first_name="  ")), "Hi,")
