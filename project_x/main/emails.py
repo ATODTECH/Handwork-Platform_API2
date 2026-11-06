@@ -80,6 +80,12 @@ def _deliver(message):
         logger.error(f"Failed to send '{message.subject}' to {', '.join(message.to)}: {error}")
 
 
+def greeting(user):
+    """How an email opens: not every account has a first name"""
+    name = (user.first_name or "").strip()
+    return f"Hi {name}," if name else "Hi,"
+
+
 def send_email(to, subject, text, html=None):
     """Send one email without waiting for it; failures are logged, never raised"""
     message = EmailMultiAlternatives(subject=subject, body=text, from_email=settings.DEFAULT_FROM_EMAIL, to=[to])

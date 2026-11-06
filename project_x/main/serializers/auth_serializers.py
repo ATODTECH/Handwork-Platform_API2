@@ -60,7 +60,8 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class SkillSerializer(serializers.ModelSerializer):
-    artisan = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    # The owner comes from the token, never the request
+    artisan = serializers.PrimaryKeyRelatedField(read_only=True)
     services = serializers.PrimaryKeyRelatedField(
         queryset=Services.objects.all(),
         many=True,
@@ -77,6 +78,10 @@ class SkillSerializer(serializers.ModelSerializer):
         )
 
     def to_internal_value(self, data):
+        # A partial update that doesn't mention services must leave them alone, not clear them
+        if self.partial and 'services' not in data:
+            return super().to_internal_value(data)
+
         services_input = data.get('services', '')
         logger.info(f"Raw services input: {services_input} (type: {type(services_input)})")
 
@@ -106,16 +111,63 @@ class SkillSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"services": "All service IDs must be valid integers"})
 
         data = data.copy()
+        if not hasattr(data, 'setlist'):
+            # A JSON body rather than a form
+            data['services'] = services
+            return super().to_internal_value(data)
         data.setlist('services', [str(s) for s in services])
         logger.info(f"Parsed services for DRF: {data.getlist('services')} (types: {[type(s) for s in data.getlist('services')]})")
 
         return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        if self.instance is None:
+            return attrs
+        if 'services' in attrs:
+            if not attrs['services']:
+                raise serializers.ValidationError({"services": "Pick at least one service."})
+            # Staff can hide a service: artisans who offer it keep it, but nobody new can pick it
+            current = set(self.instance.services.values_list("id", flat=True))
+            if any(not service.active and service.id not in current for service in attrs['services']):
+                raise serializers.ValidationError({"services": "One of these services is no longer offered."})
+        base_charge = attrs.get('base_charge', self.instance.base_charge)
+        cap_charge = attrs.get('cap_charge', self.instance.cap_charge)
+        if cap_charge < base_charge:
+            raise serializers.ValidationError({"cap_charge": "Highest charge can't be below your lowest charge."})
+        return attrs
 
     def create(self, validated_data):
         artisan = self.context['request'].user
         services = validated_data.pop('services')
         instance = Skill.objects.create(artisan=artisan, **validated_data)
         instance.services.set(services)
+        return instance
+
+    IMAGE_FIELDS = ("image1", "image2", "image3")
+
+    def update(self, instance, validated_data):
+        previous_names = {
+            field: getattr(instance, field).name
+            for field in self.IMAGE_FIELDS
+            if field in validated_data and getattr(instance, field)
+        }
+        instance = super().update(instance, validated_data)
+
+        # Removed photos shouldn't stay reachable at their public links
+        storage = instance._meta.get_field("image1").storage
+        for field, name in previous_names.items():
+            if getattr(instance, field).name != name:
+                try:
+                    storage.delete(name)
+                except Exception:
+                    logger.exception(f"Couldn't delete replaced work photo {name}")
+
+        # Same as re-uploading an ID: changes after a rejection go back to staff
+        artisan = instance.artisan
+        if validated_data and artisan.verification_status == "REJECTED":
+            artisan.verification_status = "PENDING"
+            artisan.verification_note = ""
+            artisan.save(update_fields=["verification_status", "verification_note"])
         return instance
 
     def to_representation(self, instance):
@@ -269,6 +321,20 @@ class PublicArtisanSerializer(ArtisanSerializer):
         fields = ("id", "first_name", "last_name", "profile_image", "state", "city",
                   "longitude", "latitude", "role", "isAvailable")
         read_only_fields = fields
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        # Coordinates come from the phone at sign-up and may be someone's home: only share the rough area
+        for field in ("longitude", "latitude"):
+            representation[field] = self.rough_coordinate(representation[field])
+        return representation
+
+    @staticmethod
+    def rough_coordinate(value):
+        try:
+            return f"{float(value):.2f}"
+        except (TypeError, ValueError):
+            return None
 
 
 class OnboardingLevelSerializer(serializers.ModelSerializer):

@@ -10,7 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 
 from chat.messaging import CLOSED_STATUSES
-from main.emails import send_email
+from main.emails import greeting, send_email
 from main.models import User
 from main.serializers.admin_serializers import AdminUserSerializer, RejectArtisanSerializer
 
@@ -69,7 +69,7 @@ class AdminUserViewSet(viewsets.ReadOnlyModelViewSet):
         send_email(
             user.email,
             "Your Handwork Expert account has been deactivated",
-            f"Hi {user.first_name},\n\nOur team has deactivated your account, so you can't sign in for now.\n\n"
+            f"{greeting(user)}\n\nOur team has deactivated your account, so you can't sign in for now.\n\n"
             f"Reason: {reason}\n\nIf you think this is a mistake, please contact support.\n\nThe Handwork Expert team",
         )
         return response.Response(self.get_serializer(user).data)
@@ -86,6 +86,6 @@ class AdminUserViewSet(viewsets.ReadOnlyModelViewSet):
         send_email(
             user.email,
             "Your Handwork Expert account is active again",
-            f"Hi {user.first_name},\n\nYour account has been reactivated, so you can sign in again.\n\nThe Handwork Expert team",
+            f"{greeting(user)}\n\nYour account has been reactivated, so you can sign in again.\n\nThe Handwork Expert team",
         )
         return response.Response(self.get_serializer(user).data)

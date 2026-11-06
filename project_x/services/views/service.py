@@ -3,10 +3,10 @@ from rest_framework import response, status, views
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from main.permissions import IsStaffOrReadOnly
+from main.serializers.auth_serializers import PublicArtisanSerializer
 from . import (
     # Serializers
     ServiceSerializers,
-    UserSerializer,
     CategorySerializers,
     
     # Model
@@ -36,18 +36,24 @@ class ServiceSearchViewSet(ViewSet):
         if not search_param:
             return response.Response({"detail": "Input Search Parameter"}, status=status.HTTP_400_BAD_REQUEST)
         
-        service = Services.objects.filter(name__icontains=search_param).select_related("client")
-        
+        service = Services.objects.filter(name__icontains=search_param, active=True)
+
         if not service.exists():
             return response.Response({"detail": "Parameter provided doesn't match any data on record"}, status=status.HTTP_204_NO_CONTENT)
-        
+
+        # Anyone can search without signing in, so this only returns public profiles
         results = [
             {
                 "name": services.name,
-                "artisans": UserSerializer(services.client, many=True).data
+                "artisans": PublicArtisanSerializer(
+                    User.objects.filter(
+                        skill__services=services, verification_status="APPROVED", is_active=True
+                    ).distinct(),
+                    many=True,
+                ).data
             }
             for services in service
-        ] 
+        ]
         return response.Response(results, status=status.HTTP_200_OK)
     
 
