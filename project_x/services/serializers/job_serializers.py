@@ -56,6 +56,10 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         representation['services'] = [service.name for service in instance.services.all()]
         representation['rating'] = self.get_artisan_rating(instance.artisan)
         representation['contact'] = self.get_contact(instance)
+        # Set when the booking came from an accepted offer on a request
+        # (a missing reverse one-to-one raises a subclass of AttributeError, so getattr's default covers it)
+        job_request = getattr(instance, 'job_request', None)
+        representation['request_id'] = job_request.id if job_request else None
         return representation
 
     def get_contact(self, booking):

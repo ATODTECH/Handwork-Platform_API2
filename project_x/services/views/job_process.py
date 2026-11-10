@@ -582,6 +582,9 @@ def cancel_booking(request, pk):
         booking.cancelled_at = timezone.now()
         booking.cancellation_reason = reason
         booking.save()
+        # A booking made from an accepted offer: its request takes offers again
+        from services.views.marketplace import reopen_request_after_cancel
+        reopen_request_after_cancel(booking)
         if booking.artisan:
             what = f"declined your price of ₦{booking.agreed_amount:,} and cancelled" if declined_price else "cancelled"
             Notification.objects.create(
