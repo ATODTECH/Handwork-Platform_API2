@@ -12,10 +12,16 @@ from django.utils import timezone
 from PIL import Image, UnidentifiedImageError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from chat.messaging import (
+    broadcast_request_message, can_message_request, check_request_message, request_thread_problem,
+)
+from chat.models import Message
+from chat.serializers import MessageSerializer
+from django.core.exceptions import ValidationError as DjangoValidationError
 from main.models import Notification, Skill, User
 from services.models.job_models import BookArtisan
 from services.models.marketplace_models import JobRequest, Offer, OfferRevision, RequestAttachment, SavedRequest
@@ -289,6 +295,60 @@ class JobRequestViewSet(viewsets.ModelViewSet):
         attachment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    # ── Conversations before an offer is accepted ──────────
+
+    def thread(self, request, pk):
+        """
+        The request and the provider of the conversation asked for. A provider's is always their own; the
+        customer names the provider (?provider= or "provider" in the body).
+        """
+        job_request = get_object_or_404(JobRequest.objects.select_related("customer"), pk=pk)
+        user = request.user
+        if user.pk == job_request.customer_id:
+            provider_id = request.query_params.get("provider") or request.data.get("provider")
+            try:
+                provider = User.objects.filter(pk=provider_id, role="ARTISAN").first() if provider_id else None
+            except (DjangoValidationError, ValueError):
+                provider = None
+        elif user.role == "ARTISAN":
+            provider = user
+        else:
+            raise NotFound()
+        problem = request_thread_problem(job_request, user, provider)
+        if problem == "Not authorized":
+            raise NotFound()
+        if problem:
+            raise PermissionDenied(problem) if user.role == "ARTISAN" else ValidationError({"provider": [problem]})
+        return job_request, provider
+
+    @action(detail=True, methods=["get", "post"], url_path="messages")
+    def messages(self, request, pk=None):
+        """GET: the conversation and whether it's open. POST {text}: send a message."""
+        job_request, provider = self.thread(request, pk)
+        if request.method == "POST":
+            text = str(request.data.get("text") or "").strip()
+            problem = check_request_message(job_request, request.user, provider, text)
+            if problem:
+                return Response({"detail": problem}, status=status.HTTP_400_BAD_REQUEST)
+            message = Message.objects.create(request=job_request, provider=provider, sender=request.user, text=text)
+            broadcast_request_message(message)
+            return Response(MessageSerializer(message).data, status=status.HTTP_201_CREATED)
+
+        messages = (Message.objects.filter(request=job_request, provider=provider)
+                    .select_related("sender").order_by("timestamp", "id"))
+        return Response({
+            "messages": MessageSerializer(messages, many=True).data,
+            "can_send": can_message_request(job_request),
+        })
+
+    @action(detail=True, methods=["post"], url_path="messages/read")
+    def read_messages(self, request, pk=None):
+        """Mark the other person's messages in this conversation as read"""
+        job_request, provider = self.thread(request, pk)
+        updated = (Message.objects.filter(request=job_request, provider=provider, is_read=False)
+                   .exclude(sender=request.user).update(is_read=True))
+        return Response({"updated": updated})
+
     # ── Provider actions ──────────────────────────
 
     @action(detail=False, methods=["get"])
@@ -539,6 +599,8 @@ class OfferViewSet(viewsets.ModelViewSet):
             job_request.accepted_offer = offer
             job_request.booking = booking
             job_request.save()
+            # The booking's chat opens with what they said about the request
+            Message.objects.filter(request=job_request, provider=offer.provider, booking__isnull=True).update(booking=booking)
 
         notify(offer.provider, f"{request.user.first_name} accepted your offer of {naira(offer.price)} for "
                                f"\"{job_request.title}\". You can start once they've paid.")

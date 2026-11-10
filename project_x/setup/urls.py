@@ -11,6 +11,7 @@ from main.views.user_auth import (
 )
 from main.views.admin_artisans import AdminArtisanViewSet
 from main.views.admin_users import AdminUserViewSet
+from main.views.reports import AdminReportViewSet, ReportViewSet
 from services.views.admin_services import AdminServiceViewSet
 from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
 from services.views.admin_overview import admin_overview
@@ -45,6 +46,8 @@ router.register("admin/withdrawals", AdminWithdrawalViewSet, basename="admin-wit
 router.register("admin/bookings", AdminBookingViewSet, basename="admin-bookings")
 router.register("requests", JobRequestViewSet, basename="job-requests")
 router.register("offers", OfferViewSet, basename="offers")
+router.register("reports", ReportViewSet, basename="reports")
+router.register("admin/reports", AdminReportViewSet, basename="admin-reports")
 
 urlpatterns = [
     path('', health_check, name='health-check'),

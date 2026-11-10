@@ -5,13 +5,17 @@ from rest_framework import viewsets, permissions, response, status
 from rest_framework.viewsets import ViewSet
 from rest_framework.views import APIView
 from main.models import Notification, User, Skill, BankDetails, Rating
-from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, PublicArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer, RatingSerializers, NotificationSerializer)
+from main.serializers.auth_serializers import (UserSerializer, ArtisanSerializer, PublicArtisanSerializer, MyTokenObtainPairSerializer, SkillSerializer, BankDetailSerializer, RatingSerializers, NotificationSerializer,
+    REVIEW_EDIT_DAYS, ReviewReplySerializer, visible_reviews)
 from main.permissions import IsArtisanPermission, IsRatingAuthor, IsSelfOrStaff, IsUserPermission
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import serializers
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from datetime import timedelta
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
+from django.utils import timezone
 from django.db.models import Q
 from django.core.cache import cache
 import re
@@ -341,25 +345,73 @@ class BankDetailViewSet(ViewSet):
 
 
 class RatingViewSet(viewsets.ModelViewSet):
-    """Anyone may read ratings; only customers may leave one, always as themselves."""
-    queryset = Rating.objects.select_related("artisan", "client")
+    """
+    Reviews. Anyone may read them (?artisan=<id> for one artisan's). A customer reviews a job once it's been
+    released (`booking`), can change it for REVIEW_EDIT_DAYS and until the artisan replies, and can't delete it.
+    The artisan replies with POST /artisan_rating/{id}/reply.
+    """
     serializer_class = RatingSerializers
+    http_method_names = ["get", "post", "patch"]
+
+    def get_queryset(self):
+        queryset = visible_reviews().select_related("artisan", "client", "booking").prefetch_related("booking__services")
+        artisan = self.request.query_params.get("artisan")
+        if artisan:
+            try:
+                queryset = queryset.filter(artisan_id=artisan)
+            except (ValueError, DjangoValidationError):
+                return Rating.objects.none()
+        return queryset
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [AllowAny()]
         if self.action == "create":
             return [IsUserPermission()]
+        if self.action == "reply":
+            return [IsAuthenticated()]
         return [IsRatingAuthor()]
 
     def perform_create(self, serializer):
-        rating = serializer.save(client=self.request.user)
+        booking = serializer.validated_data["booking"]
+        rating = serializer.save(client=self.request.user, artisan=booking.artisan)
         Notification.objects.create(
             recipient=rating.artisan,
-            message=f"You received a {rating.star}-star rating from {rating.client.first_name}.",
+            message=f"{rating.client.first_name} left you a {rating.star}-star review. You can reply to it.",
             notification_type='RATING'
         )
-        logger.info(f"Rating created: {rating.star} stars for artisan {rating.artisan.email}")
+        logger.info(f"Review {rating.id}: {rating.star} stars for artisan {rating.artisan.email} (booking {booking.id})")
+
+    def partial_update(self, request, *args, **kwargs):
+        rating = self.get_object()
+        if rating.reply:
+            return response.Response({"detail": "The artisan has replied, so this review can't be changed."},
+                                     status=status.HTTP_400_BAD_REQUEST)
+        if rating.created_at < timezone.now() - timedelta(days=REVIEW_EDIT_DAYS):
+            return response.Response({"detail": f"A review can only be changed within {REVIEW_EDIT_DAYS} days."},
+                                     status=status.HTTP_400_BAD_REQUEST)
+        return super().partial_update(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"])
+    def reply(self, request, pk=None):
+        """The reviewed artisan answers the review (or changes their answer)"""
+        rating = self.get_object()
+        if rating.artisan_id != request.user.pk:
+            return response.Response({"detail": "Only the artisan who was reviewed can reply."},
+                                     status=status.HTTP_403_FORBIDDEN)
+        serializer = ReviewReplySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        first_reply = not rating.reply
+        rating.reply = serializer.validated_data["reply"]
+        rating.replied_at = timezone.now()
+        rating.save(update_fields=["reply", "replied_at", "updated_at"])
+        if first_reply:
+            Notification.objects.create(
+                recipient=rating.client,
+                message=f"{rating.artisan.first_name} replied to your review.",
+                notification_type='RATING'
+            )
+        return response.Response(RatingSerializers(rating, context={"request": request}).data)
 
 
 class NotificationViewSet(viewsets.ModelViewSet):
@@ -428,7 +480,7 @@ def delete_account(request):
 @api_view(["GET"])
 def get_my_ratings(request, pk):
     user = get_object_or_404(User, pk=pk)
-    ratings = Rating.objects.filter(Q(client=user) | Q(artisan=user))
+    ratings = visible_reviews().filter(Q(client=user) | Q(artisan=user)).select_related('client', 'artisan', 'booking')
     serialized_data = RatingSerializers(ratings, many=True)
     return response.Response(serialized_data.data)
 
@@ -701,6 +753,6 @@ def get_my_ratings(request, pk):
 # @api_view(["GET"])
 # def get_my_ratings(request, pk):
 #     user = get_object_or_404(User, pk=pk)
-#     ratings = Rating.objects.filter(Q(client=user) | Q(artisan=user))
+#     ratings = visible_reviews().filter(Q(client=user) | Q(artisan=user)).select_related('client', 'artisan', 'booking')
 #     serialized_data = RatingSerializers(ratings, many=True)
 #     return response.Response(serialized_data.data)

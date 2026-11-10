@@ -126,3 +126,55 @@ class ChatSocketTests(TransactionTestCase):
 
         run()
         self.assertFalse(Message.objects.exists())
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY_LAYER,
+                   PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class RequestChatSocketTests(TransactionTestCase):
+    def setUp(self):
+        from main.models import Skill
+        from services.models.marketplace_models import JobRequest
+        self.customer = make_user("chi@example.com")
+        self.provider = make_user("ada@example.com", role="ARTISAN", verification_status="APPROVED")
+        self.outsider = make_user("bayo@example.com", role="ARTISAN", verification_status="APPROVED")
+        plumbing = Services.objects.create(name="Plumbing", description="Pipes")
+        Skill.objects.create(artisan=self.provider, description="Pipes").services.set([plumbing])
+        self.job_request = JobRequest.objects.create(
+            customer=self.customer, title="Leaking sink", description="Drips under the sink all day long",
+            visibility="PRIVATE", target_provider=self.provider,
+        )
+        self.job_request.services.set([plumbing])
+        self.job_request.publish()
+        self.job_request.save()
+
+    def connect(self, user, provider):
+        return WebsocketCommunicator(
+            application, f"/ws/requests/{self.job_request.id}/{provider.id}/?token={AccessToken.for_user(user)}",
+            headers=[(b"origin", b"http://localhost")],
+        )
+
+    def test_live_messages_reach_the_other_side(self):
+        @async_to_sync
+        async def run():
+            customer, provider = self.connect(self.customer, self.provider), self.connect(self.provider, self.provider)
+            for socket in (customer, provider):
+                await socket.connect()
+                self.assertEqual(await socket.receive_json_from(), {"messages": []})
+            await provider.send_json_to({"text": "Is it the cold tap?"})
+            received = await customer.receive_json_from()
+            self.assertEqual((received["type"], received["message"]["text"]), ("chat.message", "Is it the cold tap?"))
+            await customer.disconnect()
+            await provider.disconnect()
+
+        run()
+        self.assertEqual(Message.objects.get().provider, self.provider)
+
+    def test_someone_elses_conversation_is_refused(self):
+        @async_to_sync
+        async def run():
+            socket = self.connect(self.outsider, self.provider)
+            await socket.connect()
+            self.assertEqual((await socket.receive_json_from())["error"], "Not authorized")
+            await socket.disconnect()
+
+        run()

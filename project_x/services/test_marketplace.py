@@ -407,3 +407,94 @@ class AttachmentTests(MarketplaceTestCase):
         self.assertEqual(response.status_code, 204)
         deleted.assert_called_once_with("request_media/a.png")
         self.assertFalse(RequestAttachment.objects.exists())
+
+
+IN_MEMORY_LAYER = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+
+
+@override_settings(CHANNEL_LAYERS=IN_MEMORY_LAYER)
+class RequestChatTests(MarketplaceTestCase):
+    def setUp(self):
+        super().setUp()
+        self.job_request = self.published()
+        self.url = f"/api/requests/{self.job_request['id']}/messages"
+
+    def say(self, user, text, provider=None):
+        self.client.force_authenticate(user)
+        body = {"text": text, **({"provider": str(provider.id)} if provider else {})}
+        return self.client.post(self.url, body, format="json")
+
+    def thread(self, user, provider=None):
+        self.client.force_authenticate(user)
+        return self.client.get(self.url + (f"?provider={provider.id}" if provider else ""))
+
+    def test_a_provider_asks_a_question_before_offering(self):
+        self.assertEqual(self.say(self.plumber, "Is the pipe metal or plastic?").status_code, 201)
+        reply = self.say(self.customer, "Plastic", provider=self.plumber)
+        self.assertEqual(reply.status_code, 201, reply.content)
+        texts = [m["text"] for m in self.data(self.thread(self.plumber))["messages"]]
+        self.assertEqual(texts, ["Is the pipe metal or plastic?", "Plastic"])
+
+    def test_providers_only_see_their_own_conversation(self):
+        self.say(self.plumber, "Question from Ada")
+        self.say(self.plumber2, "Question from Bayo")
+        self.assertEqual([m["text"] for m in self.data(self.thread(self.plumber2))["messages"]], ["Question from Bayo"])
+        self.assertEqual([m["text"] for m in self.data(self.thread(self.customer, self.plumber))["messages"]],
+                         ["Question from Ada"])
+
+    def test_the_customer_cant_cold_message_a_provider(self):
+        self.assertEqual(self.say(self.customer, "Hi", provider=self.plumber).status_code, 400)
+        self.offer(self.job_request)
+        self.assertEqual(self.say(self.customer, "Hi", provider=self.plumber).status_code, 201)
+
+    def test_outsiders_and_unapproved_providers_are_kept_out(self):
+        self.client.force_authenticate(self.other_customer)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+        self.assertEqual(self.say(self.pending, "Hello").status_code, 403)
+        private = self.published(visibility="PRIVATE", target_provider=str(self.plumber2.id))
+        self.client.force_authenticate(self.plumber)
+        self.assertEqual(self.client.get(f"/api/requests/{private['id']}/messages").status_code, 404)
+
+    def test_providers_see_only_the_customers_first_name(self):
+        self.say(self.plumber, "When are you home?")
+        self.offer(self.job_request)
+        self.say(self.customer, "After 5pm", provider=self.plumber)
+        message = self.data(self.thread(self.plumber))["messages"][1]
+        self.assertEqual(message["sender_name"], "Chi")
+        conversation = self.data(self.client.get("/api/conversations"))[0]
+        self.assertEqual((conversation["kind"], conversation["with"]["name"]), ("request", "Chi"))
+
+    def test_conversations_list_request_threads_with_unread_counts(self):
+        self.say(self.plumber, "Is the pipe metal?")
+        self.say(self.plumber, "And how old is it?")
+        self.client.force_authenticate(self.customer)
+        conversation = self.data(self.client.get("/api/conversations"))[0]
+        self.assertEqual(conversation["request_id"], self.job_request["id"])
+        self.assertEqual(conversation["provider_id"], str(self.plumber.id))
+        self.assertEqual((conversation["unread"], conversation["can_send"]), (2, True))
+        self.assertEqual(conversation["with"]["name"], "Ada Test")
+        self.client.post(self.url + "/read", {"provider": str(self.plumber.id)}, format="json")
+        self.assertEqual(self.data(self.client.get("/api/conversations"))[0]["unread"], 0)
+
+    def test_accepting_carries_the_chosen_conversation_into_the_booking(self):
+        self.say(self.plumber, "I can bring a new trap")
+        offer_id = self.data(self.offer(self.job_request))["id"]
+        self.say(self.plumber2, "Me too")
+        self.offer(self.job_request, self.plumber2)
+        booking_id = self.data(self.accept(offer_id))["booking_id"]
+
+        texts = [m["text"] for m in self.data(self.client.get(f"/api/chat/{booking_id}/"))]
+        self.assertEqual(texts, ["I can bring a new trap"])
+        conversations = self.data(self.client.get("/api/conversations"))
+        self.assertEqual([(c["kind"], c["booking_id"] or c["request_id"]) for c in conversations],
+                         [("request", self.job_request["id"]), ("booking", booking_id)])
+        # The other provider's conversation is read-only now
+        self.assertFalse(conversations[0]["can_send"])
+        self.assertEqual(self.say(self.plumber2, "Still keen").status_code, 400)
+
+    def test_a_closed_request_is_read_only(self):
+        self.say(self.plumber, "Question")
+        self.client.force_authenticate(self.customer)
+        self.client.post(f"/api/requests/{self.job_request['id']}/close")
+        self.assertEqual(self.say(self.plumber, "Another one").status_code, 400)
+        self.assertFalse(self.data(self.thread(self.plumber))["can_send"])

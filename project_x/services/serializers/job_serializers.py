@@ -60,6 +60,9 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         # (a missing reverse one-to-one raises a subclass of AttributeError, so getattr's default covers it)
         job_request = getattr(instance, 'job_request', None)
         representation['request_id'] = job_request.id if job_request else None
+        # The customer's review of this job, once they've left one
+        review = getattr(instance, 'review', None)
+        representation['review'] = ({"id": review.id, "star": review.star} if review and review.hidden_at is None else None)
         return representation
 
     def get_contact(self, booking):
@@ -74,7 +77,7 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         return None
 
     def get_artisan_rating(self, artisan):
-        ratings = Rating.objects.filter(artisan=artisan)
+        ratings = Rating.objects.filter(artisan=artisan, hidden_at__isnull=True).select_related('client', 'artisan', 'booking')
         if ratings.exists():
             return RatingSerializers(ratings, many=True).data
         return None

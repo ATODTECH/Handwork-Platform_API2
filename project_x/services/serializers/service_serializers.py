@@ -35,7 +35,7 @@ class ServiceSerializers(serializers.ModelSerializer):
         # Get all artisan ratings at once
         ratings = (
             Rating.objects
-            .filter(artisan__in=[skill.artisan for skill in skills_with_artisans])
+            .filter(artisan__in=[skill.artisan for skill in skills_with_artisans], hidden_at__isnull=True)
             .values('artisan')
             .annotate(average_rating=Avg('star'))
         )

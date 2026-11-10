@@ -5,7 +5,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.exceptions import NotFound, PermissionDenied
 
-from .messaging import broadcast, can_message, check_message, is_participant
+from .messaging import HIDDEN_TEXT, broadcast, can_message, can_message_request, check_message, is_participant
 from .models import Message
 from .serializers import MessageSerializer
 from services.models.job_models import BookArtisan
@@ -75,24 +75,92 @@ def conversations(request):
             last_message_at=Max('messages__timestamp'),
             unread=Count('messages', filter=Q(messages__is_read=False) & ~Q(messages__sender=user)),
             last_text=Subquery(latest.values('text')[:1]),
+            last_hidden=Subquery(latest.values('hidden_at')[:1]),
             last_sender=Subquery(latest.values('sender')[:1]),
             activity=Coalesce(Max('messages__timestamp'), F('created_at')),
         )
         .order_by('-activity')
     )
 
-    return Response([{
+    items = [{
+        "kind": "booking",
         "booking_id": booking.id,
+        "request_id": None,
         "status": booking.status,
         "services": [service.name for service in booking.services.all()],
         "scheduled_date": booking.scheduled_date,
         "created_at": booking.created_at,
         "with": person(booking.artisan if booking.client_id == user.pk else booking.client),
         "last_message": {
-            "text": booking.last_text,
+            "text": HIDDEN_TEXT if booking.last_hidden else booking.last_text,
             "timestamp": booking.last_message_at,
             "mine": booking.last_sender == user.pk,
         } if booking.last_text is not None else None,
         "unread": booking.unread,
         "can_send": can_message(booking),
-    } for booking in bookings])
+        "activity": booking.activity,
+    } for booking in bookings]
+    items += request_conversations(user)
+    items.sort(key=lambda item: item["activity"], reverse=True)
+    for item in items:
+        del item["activity"]
+    return Response(items)
+
+
+def request_conversations(user):
+    """
+    Conversations about requests (before an offer is accepted) that have at least one message. The chosen
+    provider's carries on in the booking, so it's listed there instead.
+    """
+    from services.models.marketplace_models import JobRequest
+    from services.serializers.marketplace_serializers import request_stage
+    from main.models import User
+
+    latest = Message.objects.filter(
+        request=OuterRef('request_id'), provider=OuterRef('provider_id')
+    ).order_by('-timestamp', '-id')
+    threads = list(
+        Message.objects.filter(request__isnull=False)
+        .filter(Q(request__customer=user) | Q(provider=user))
+        .values('request_id', 'provider_id')
+        .annotate(
+            last_message_at=Max('timestamp'),
+            unread=Count('id', filter=Q(is_read=False) & ~Q(sender=user)),
+            last_text=Subquery(latest.values('text')[:1]),
+            last_hidden=Subquery(latest.values('hidden_at')[:1]),
+            last_sender=Subquery(latest.values('sender')[:1]),
+        )
+    )
+    requests = JobRequest.objects.select_related('customer', 'booking', 'accepted_offer').prefetch_related('services')
+    requests = {job_request.pk: job_request for job_request in requests.filter(pk__in={t['request_id'] for t in threads})}
+    providers = {provider.pk: provider for provider in User.objects.filter(pk__in={t['provider_id'] for t in threads})}
+
+    items = []
+    for thread in threads:
+        job_request, provider = requests[thread['request_id']], providers[thread['provider_id']]
+        accepted = job_request.accepted_offer
+        if job_request.booking_id and accepted and accepted.provider_id == provider.pk:
+            continue
+        items.append({
+            "kind": "request",
+            "booking_id": None,
+            "request_id": job_request.id,
+            "request_title": job_request.title,
+            "provider_id": str(provider.pk),
+            "status": request_stage(job_request),
+            "services": [service.name for service in job_request.services.all()],
+            "scheduled_date": job_request.deadline,
+            "created_at": job_request.created_at,
+            "with": person(provider) if job_request.customer_id == user.pk else {
+                **person(job_request.customer), "name": job_request.customer.first_name,
+            },
+            "last_message": {
+                "text": HIDDEN_TEXT if thread['last_hidden'] else thread['last_text'],
+                "timestamp": thread['last_message_at'],
+                "mine": thread['last_sender'] == user.pk,
+            },
+            "unread": thread['unread'],
+            "can_send": can_message_request(job_request),
+            "activity": thread['last_message_at'],
+        })
+    return items
