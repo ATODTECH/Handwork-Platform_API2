@@ -67,6 +67,11 @@ class ChatTests(ApiTestCase):
         self.client.force_authenticate(self.artisan)
         self.assertEqual(self.data(self.client.get("/api/conversations"))[1]["unread"], 0)
 
+    def test_the_last_message_knows_who_sent_it(self):
+        self.send(self.artisan, "On my way")
+        self.client.force_authenticate(self.artisan)
+        self.assertTrue(self.data(self.client.get("/api/conversations"))[0]["last_message"]["mine"])
+
     def test_read_marks_only_the_other_persons_messages(self):
         self.send(self.artisan, "On my way")
         self.send(self.customer, "Thanks")

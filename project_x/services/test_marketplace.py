@@ -464,6 +464,13 @@ class RequestChatTests(MarketplaceTestCase):
         conversation = self.data(self.client.get("/api/conversations"))[0]
         self.assertEqual((conversation["kind"], conversation["with"]["name"]), ("request", "Chi"))
 
+    def test_the_last_message_knows_who_sent_it(self):
+        self.say(self.plumber, "Is the pipe metal?")
+        self.client.force_authenticate(self.plumber)
+        self.assertTrue(self.data(self.client.get("/api/conversations"))[0]["last_message"]["mine"])
+        self.client.force_authenticate(self.customer)
+        self.assertFalse(self.data(self.client.get("/api/conversations"))[0]["last_message"]["mine"])
+
     def test_conversations_list_request_threads_with_unread_counts(self):
         self.say(self.plumber, "Is the pipe metal?")
         self.say(self.plumber, "And how old is it?")
