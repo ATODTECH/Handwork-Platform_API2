@@ -1,3 +1,5 @@
+import uuid
+
 from django.db.models import Count, F, Max, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets, permissions, status
@@ -50,6 +52,19 @@ class ChatViewSet(viewsets.ViewSet):
         return Response({"updated": updated})
 
 
+def is_me(sender_id, user):
+    """
+    Whether a subquery's sender id is this user. SQLite hands it back as a bare hex string rather than a UUID
+    (PostgreSQL gives a UUID), so compare the parsed values.
+    """
+    if sender_id is None:
+        return False
+    try:
+        return uuid.UUID(str(sender_id)) == uuid.UUID(str(user.pk))
+    except ValueError:
+        return False
+
+
 def person(user):
     if user is None:
         return None
@@ -94,7 +109,7 @@ def conversations(request):
         "last_message": {
             "text": HIDDEN_TEXT if booking.last_hidden else booking.last_text,
             "timestamp": booking.last_message_at,
-            "mine": booking.last_sender == user.pk,
+            "mine": is_me(booking.last_sender, user),
         } if booking.last_text is not None else None,
         "unread": booking.unread,
         "can_send": can_message(booking),
@@ -157,7 +172,7 @@ def request_conversations(user):
             "last_message": {
                 "text": HIDDEN_TEXT if thread['last_hidden'] else thread['last_text'],
                 "timestamp": thread['last_message_at'],
-                "mine": thread['last_sender'] == user.pk,
+                "mine": is_me(thread['last_sender'], user),
             },
             "unread": thread['unread'],
             "can_send": can_message_request(job_request),
