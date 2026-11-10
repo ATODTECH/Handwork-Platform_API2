@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from .messaging import sender_name
 from .models import Message
 
 
@@ -12,4 +13,4 @@ class MessageSerializer(serializers.ModelSerializer):
         read_only_fields = ('timestamp', 'is_read')
 
     def get_sender_name(self, obj):
-        return obj.sender.get_full_name() or obj.sender.email
+        return sender_name(obj)
