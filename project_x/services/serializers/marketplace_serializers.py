@@ -1,8 +1,8 @@
-from django.db.models import Avg, Count
 from django.utils import timezone
 from rest_framework import serializers
 
-from main.models import Rating, Skill, User
+from main.models import Skill, User
+from main.serializers.auth_serializers import review_summary
 from services.models.job_models import BookArtisan
 from services.models.marketplace_models import JobRequest, Offer, RequestAttachment
 from services.models.services_models import Services
@@ -54,7 +54,7 @@ def full_name(user):
 
 def provider_summary(provider):
     """What a customer sees about a provider when comparing offers: no contact details or address"""
-    ratings = Rating.objects.filter(artisan=provider).aggregate(average=Avg("star"), count=Count("id"))
+    reviews = review_summary(provider)
     skill = Skill.objects.filter(artisan=provider).prefetch_related("services").first()
     photos = [image.url for image in (skill.image1, skill.image2, skill.image3) if image] if skill else []
     return {
@@ -64,8 +64,9 @@ def provider_summary(provider):
         "state": provider.state,
         "city": provider.city,
         "verified": provider.verification_status == "APPROVED",
-        "average_rating": round(ratings["average"], 1) if ratings["average"] else None,
-        "review_count": ratings["count"],
+        # Verified reviews only: each is tied to a job the customer paid for
+        "average_rating": reviews["average"],
+        "review_count": reviews["count"],
         "completed_jobs": BookArtisan.objects.filter(artisan=provider, status__in=("Released", "Paid in Full")).count(),
         "member_since": provider.date_joined.date().isoformat(),
         "services": [service.name for service in skill.services.all()] if skill else [],

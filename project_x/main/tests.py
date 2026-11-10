@@ -260,9 +260,11 @@ class RatingAndLogsTests(ApiTestCase):
         self.artisan = make_user("ada@example.com", role="ARTISAN")
         self.customer = make_user("chi@example.com")
         self.other_customer = make_user("dee@example.com")
+        self.booking = BookArtisan.objects.create(client=self.customer, artisan=self.artisan,
+                                                  description="Leaking sink", status="Released")
 
     def test_ratings_are_written_as_the_signed_in_customer(self):
-        payload = {"artisan": str(self.artisan.id), "star": 5, "message": "Great", "client": str(self.other_customer.id)}
+        payload = {"booking": self.booking.id, "star": 5, "message": "Great", "client": str(self.other_customer.id)}
         self.assertEqual(self.client.post("/api/artisan_rating", payload).status_code, 401)
 
         self.client.force_authenticate(self.artisan)
@@ -273,13 +275,14 @@ class RatingAndLogsTests(ApiTestCase):
         self.assertEqual(Rating.objects.get().client, self.customer)
 
     def test_only_the_author_can_change_a_rating(self):
-        rating = Rating.objects.create(client=self.customer, artisan=self.artisan, star=4, message="Good")
+        rating = Rating.objects.create(client=self.customer, artisan=self.artisan, star=4, message="Good", booking=self.booking)
         self.client.force_authenticate(self.other_customer)
         self.assertEqual(self.client.patch(f"/api/artisan_rating/{rating.id}", {"star": 1}).status_code, 403)
-        self.assertEqual(self.client.delete(f"/api/artisan_rating/{rating.id}").status_code, 403)
 
         self.client.force_authenticate(self.customer)
         self.assertEqual(self.client.patch(f"/api/artisan_rating/{rating.id}", {"star": 5}).status_code, 200)
+        # Reviews stay on record: nobody deletes them (staff hide them instead)
+        self.assertEqual(self.client.delete(f"/api/artisan_rating/{rating.id}").status_code, 405)
 
     def test_ratings_are_public_to_read(self):
         self.assertEqual(self.client.get("/api/artisan_rating").status_code, 200)

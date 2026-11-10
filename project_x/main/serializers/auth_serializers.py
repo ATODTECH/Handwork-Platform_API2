@@ -299,6 +299,7 @@ class ArtisanSerializer(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         representation['skill'] = self.get_artisan_skill(instance)
         representation['rating'] = self.get_artisan_rating(instance)
+        representation['review_summary'] = review_summary(instance)
         return representation
 
     def get_artisan_skill(self, artisan):
@@ -308,7 +309,8 @@ class ArtisanSerializer(serializers.ModelSerializer):
         return SkillSerializer(skill).data
 
     def get_artisan_rating(self, artisan):
-        rating = Rating.objects.filter(artisan=artisan).select_related('artisan', 'client').first()
+        # The latest review (mobile shows one)
+        rating = visible_reviews().filter(artisan=artisan).select_related('artisan', 'client', 'booking').first()
         if rating is None:
             return None
         return RatingSerializers(rating).data
@@ -379,18 +381,79 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         return OnboardingLevelSerializer(onboarding).data
 
 
+# Bookings a customer can review: released to the artisan (old deposit bookings end at "Paid in Full")
+REVIEWABLE_STATUSES = ("Released", "Paid in Full")
+# The customer can change their review for this long, and until the artisan replies
+REVIEW_EDIT_DAYS = 14
+
+
+def visible_reviews():
+    return Rating.objects.filter(hidden_at__isnull=True)
+
+
+def review_summary(artisan):
+    """Average and count of an artisan's verified reviews (those tied to a job), which staff haven't hidden"""
+    from django.db.models import Avg, Count
+    totals = visible_reviews().filter(artisan=artisan, booking__isnull=False).aggregate(
+        average=Avg("star"), count=Count("id")
+    )
+    return {"average": round(totals["average"], 1) if totals["average"] else None, "count": totals["count"]}
+
+
 class RatingSerializers(serializers.ModelSerializer):
+    """
+    A review of an artisan, left by the customer after a released booking. The customer writes star,
+    message and (when creating) booking; the artisan comes from the booking, and replies separately.
+    """
+    verified = serializers.SerializerMethodField()
+    services = serializers.SerializerMethodField()
+
     class Meta:
         model = Rating
-        fields = ("id", "client", "artisan", "star", "message")
-        # The author is the signed-in customer, never taken from the request body
-        read_only_fields = ("client",)
+        fields = ("id", "client", "artisan", "booking", "star", "message", "reply", "replied_at", "verified",
+                  "services", "created_at", "updated_at")
+        # The author is the signed-in customer and the artisan comes from the booking, never the request body
+        read_only_fields = ("client", "artisan", "reply", "replied_at", "created_at", "updated_at")
+        extra_kwargs = {"booking": {"required": True, "allow_null": False}}
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        representation['client'] = f"{instance.client.first_name} {instance.client.last_name}"
+        # First name and initial: enough to show it's a real person, without their full name
+        client = instance.client
+        representation['client'] = f"{client.first_name} {client.last_name[:1]}.".strip() if client.last_name else client.first_name
         representation['artisan'] = f"{instance.artisan.first_name} {instance.artisan.last_name}"
         return representation
+
+    def get_verified(self, rating):
+        return rating.booking_id is not None
+
+    def get_services(self, rating):
+        booking = rating.booking
+        return [service.name for service in booking.services.all()] if booking else []
+
+    def validate_message(self, message):
+        message = message.strip()
+        if len(message) > 2000:
+            raise serializers.ValidationError("Keep your review under 2,000 characters.")
+        return message
+
+    def validate_booking(self, booking):
+        if self.instance is not None:
+            if booking != self.instance.booking:
+                raise serializers.ValidationError("A review stays with its job.")
+            return booking
+        request = self.context["request"]
+        if booking.client_id != request.user.pk:
+            raise serializers.ValidationError("You can only review your own jobs.")
+        if booking.status not in REVIEWABLE_STATUSES or booking.artisan_id is None:
+            raise serializers.ValidationError("You can review a job once it's done and the artisan has been paid.")
+        if Rating.objects.filter(booking=booking).exists():
+            raise serializers.ValidationError("You've already reviewed this job.")
+        return booking
+
+
+class ReviewReplySerializer(serializers.Serializer):
+    reply = serializers.CharField(min_length=2, max_length=1000, trim_whitespace=True)
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -608,6 +671,7 @@ class NotificationSerializer(serializers.ModelSerializer):
 #         representation = super().to_representation(instance)
 #         representation['skill'] = self.get_artisan_skill(instance)
 #         representation['rating'] = self.get_artisan_rating(instance)
+        representation['review_summary'] = review_summary(instance)
 #         return representation
     
 #     def get_artisan_skill(self, artisan):

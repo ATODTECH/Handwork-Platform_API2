@@ -189,9 +189,21 @@ class Rating(models.Model):
     client = models.ForeignKey(User, related_name="rated_client", on_delete=models.CASCADE, limit_choices_to={'role': 'USER'})
     artisan = models.ForeignKey(User, related_name="artisan_rating", on_delete=models.CASCADE, limit_choices_to={'role': 'ARTISAN'})
     star = models.IntegerField(choices=STAR_NO, default=1)
-    message = models.TextField()
+    message = models.TextField(blank=True, default="")
+    # The job this review is for: one review per released booking. Ratings from before reviews were tied to
+    # bookings have none, and don't count as verified.
+    booking = models.OneToOneField("services.BookArtisan", on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="review")
+    reply = models.TextField(blank=True, default="")
+    replied_at = models.DateTimeField(null=True, blank=True)
+    # Staff hide a review (fake, abusive...) instead of deleting it, so the record stays
+    hidden_at = models.DateTimeField(null=True, blank=True)
+    hidden_reason = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        ordering = ['-created_at', '-id']
         indexes = [
             models.Index(fields=['artisan']),
             models.Index(fields=['client']),
