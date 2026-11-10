@@ -54,7 +54,7 @@ class AdminBookingViewSet(viewsets.ReadOnlyModelViewSet):
         """The booking's chat, read-only for staff (e.g. to settle a reported problem)"""
         booking = self.get_object()
         messages = Message.objects.filter(booking=booking).select_related("sender").order_by("timestamp", "id")
-        return response.Response(MessageSerializer(messages, many=True).data)
+        return response.Response(MessageSerializer(messages, many=True, context={"staff": True}).data)
 
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):

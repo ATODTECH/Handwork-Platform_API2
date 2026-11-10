@@ -8,7 +8,7 @@ from rest_framework import response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
 
-from main.models import User
+from main.models import Report, User
 from services.models.job_models import BookArtisan, Transaction, Withdrawal
 
 LIST_LIMIT = 5
@@ -88,6 +88,8 @@ def admin_overview(request):
             "pending": pending_withdrawals.count(),
             "pending_amount": pending_withdrawals.aggregate(value=Sum("amount"))["value"] or Decimal("0"),
         },
+        # Reports of accounts, requests, offers, messages, bookings and reviews waiting for staff
+        "reports": {"open": Report.objects.filter(status="OPEN").count()},
         "artisans_awaiting_review": [{
             "id": str(artisan.id),
             "name": full_name(artisan),

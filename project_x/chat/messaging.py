@@ -47,6 +47,13 @@ def sender_name(message):
     return sender.get_full_name() or sender.email
 
 
+HIDDEN_TEXT = "This message was removed by our team."
+
+
+def shown_text(message):
+    return HIDDEN_TEXT if message.hidden_at else message.text
+
+
 def message_payload(message):
     """A message as the WebSocket sends it (the mobile app reads these keys)"""
     sender = message.sender
@@ -55,7 +62,7 @@ def message_payload(message):
         'sender': str(sender.id),
         'sender_name': sender_name(message),
         'sender_role': getattr(sender, 'role', 'UNKNOWN'),
-        'text': message.text,
+        'text': shown_text(message),
         'timestamp': message.timestamp.isoformat(),
         'is_read': message.is_read,
     }

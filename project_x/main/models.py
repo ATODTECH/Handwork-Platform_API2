@@ -234,3 +234,65 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.notification_type} for {self.recipient.email}"
+
+class Report(models.Model):
+    """
+    Someone flags an account, request, offer, message, booking or review for staff to look at. Staff dismiss it
+    or act on it (hiding the content; deactivating an account happens on the Users page).
+    """
+    TARGET_TYPES = (
+        ("USER", "Account"),
+        ("REQUEST", "Request"),
+        ("OFFER", "Offer"),
+        ("MESSAGE", "Message"),
+        ("BOOKING", "Booking"),
+        ("REVIEW", "Review"),
+    )
+    REASONS = (
+        ("SCAM", "Scam or fraud"),
+        ("FAKE", "Fake or misleading"),
+        ("INAPPROPRIATE", "Inappropriate content"),
+        ("HARASSMENT", "Harassment or abuse"),
+        ("SAFETY", "Safety concern"),
+        ("OFF_PLATFORM", "Asked to pay outside Handwork Expert"),
+        ("SPAM", "Spam"),
+        ("OTHER", "Something else"),
+    )
+    STATUS = (
+        ("OPEN", "Open"),
+        ("ACTIONED", "Actioned"),
+        ("DISMISSED", "Dismissed"),
+    )
+
+    reporter = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reports_made")
+    target_type = models.CharField(max_length=10, choices=TARGET_TYPES)
+    # Whoever is responsible for what was reported (the author of a message, the provider of an offer...)
+    reported_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                      related_name="reports_received")
+    request = models.ForeignKey("services.JobRequest", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    offer = models.ForeignKey("services.Offer", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    message = models.ForeignKey("chat.Message", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    booking = models.ForeignKey("services.BookArtisan", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    review = models.ForeignKey(Rating, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    reason = models.CharField(max_length=15, choices=REASONS)
+    details = models.TextField(blank=True, default="")
+
+    status = models.CharField(max_length=10, choices=STATUS, default="OPEN")
+    content_hidden = models.BooleanField(default=False)
+    resolution_note = models.TextField(blank=True, default="")
+    resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "target_type"])]
+
+    def __str__(self):
+        return f"Report {self.pk}: {self.target_type} ({self.status})"
+
+    def target_key(self):
+        """Identifies what was reported, so reports about the same thing are settled together"""
+        field = {"USER": "reported_user", "REQUEST": "request", "OFFER": "offer", "MESSAGE": "message",
+                 "BOOKING": "booking", "REVIEW": "review"}[self.target_type]
+        return {"target_type": self.target_type, f"{field}_id": getattr(self, f"{field}_id")}

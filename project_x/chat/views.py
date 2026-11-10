@@ -5,7 +5,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.exceptions import NotFound, PermissionDenied
 
-from .messaging import broadcast, can_message, can_message_request, check_message, is_participant
+from .messaging import HIDDEN_TEXT, broadcast, can_message, can_message_request, check_message, is_participant
 from .models import Message
 from .serializers import MessageSerializer
 from services.models.job_models import BookArtisan
@@ -75,6 +75,7 @@ def conversations(request):
             last_message_at=Max('messages__timestamp'),
             unread=Count('messages', filter=Q(messages__is_read=False) & ~Q(messages__sender=user)),
             last_text=Subquery(latest.values('text')[:1]),
+            last_hidden=Subquery(latest.values('hidden_at')[:1]),
             last_sender=Subquery(latest.values('sender')[:1]),
             activity=Coalesce(Max('messages__timestamp'), F('created_at')),
         )
@@ -91,7 +92,7 @@ def conversations(request):
         "created_at": booking.created_at,
         "with": person(booking.artisan if booking.client_id == user.pk else booking.client),
         "last_message": {
-            "text": booking.last_text,
+            "text": HIDDEN_TEXT if booking.last_hidden else booking.last_text,
             "timestamp": booking.last_message_at,
             "mine": booking.last_sender == user.pk,
         } if booking.last_text is not None else None,
@@ -126,6 +127,7 @@ def request_conversations(user):
             last_message_at=Max('timestamp'),
             unread=Count('id', filter=Q(is_read=False) & ~Q(sender=user)),
             last_text=Subquery(latest.values('text')[:1]),
+            last_hidden=Subquery(latest.values('hidden_at')[:1]),
             last_sender=Subquery(latest.values('sender')[:1]),
         )
     )
@@ -153,7 +155,7 @@ def request_conversations(user):
                 **person(job_request.customer), "name": job_request.customer.first_name,
             },
             "last_message": {
-                "text": thread['last_text'],
+                "text": HIDDEN_TEXT if thread['last_hidden'] else thread['last_text'],
                 "timestamp": thread['last_message_at'],
                 "mine": thread['last_sender'] == user.pk,
             },
