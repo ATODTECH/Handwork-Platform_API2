@@ -16,6 +16,7 @@ from services.views.admin_services import AdminServiceViewSet
 from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
 from services.views.admin_overview import admin_overview
 from services.views.admin_bookings import AdminBookingViewSet
+from services.views.admin_marketplace import AdminOfferViewSet, AdminRequestViewSet
 from services.views.marketplace import JobRequestViewSet, OfferViewSet
 from services.views.service import ServiceViewSet, ServiceSearchViewSet, CategoryViewSet, GetServices
 from services.views.job_process import ArtisanPaymentsView, BookArtisanViewSet, get_my_bookings, MyFilteredBookings, toggle_availability, get_today_bookings, pay_booking, verify_booking_payment, confirm_booking, cancel_booking, report_problem, pay_deposit, pay_balance, paystack_webhook, MaterialQuoteViewSet, ArtisanEarningsView, ArtisanEarningsFilterView
@@ -44,6 +45,8 @@ router.register("admin/services", AdminServiceViewSet, basename="admin-services"
 router.register("withdrawals", WithdrawalViewSet, basename="withdrawals")
 router.register("admin/withdrawals", AdminWithdrawalViewSet, basename="admin-withdrawals")
 router.register("admin/bookings", AdminBookingViewSet, basename="admin-bookings")
+router.register("admin/requests", AdminRequestViewSet, basename="admin-requests")
+router.register("admin/offers", AdminOfferViewSet, basename="admin-offers")
 router.register("requests", JobRequestViewSet, basename="job-requests")
 router.register("offers", OfferViewSet, basename="offers")
 router.register("reports", ReportViewSet, basename="reports")

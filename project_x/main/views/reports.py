@@ -24,12 +24,12 @@ from main.serializers.report_serializers import (
 )
 from services.models.job_models import BookArtisan
 from services.models.marketplace_models import JobRequest, Offer
+from services.views.admin_marketplace import staff_close_request, staff_withdraw_offer
 
 logger = logging.getLogger("main")
 
 # Enough for anyone with a real problem; stops one account flooding staff
 MAX_REPORTS_PER_DAY = 20
-REMOVED = "Removed by our team."
 
 TARGET_LABELS = {"USER": "account", "REQUEST": "request", "OFFER": "offer", "MESSAGE": "message",
                  "BOOKING": "booking", "REVIEW": "review"}
@@ -132,29 +132,13 @@ def hide_content(report, note, staff):
         Message.objects.filter(pk=report.message_id).update(hidden_at=now)
     elif report.target_type == "OFFER":
         offer = Offer.objects.select_for_update().get(pk=report.offer_id)
-        if offer.status == "ACCEPTED":
-            return "This offer was accepted and has a booking. Settle it from the Bookings page."
-        if offer.status == "SUBMITTED":
-            offer.status = "WITHDRAWN"
-            offer.rejection_note = REMOVED
-            offer.save(update_fields=["status", "rejection_note", "updated_at"])
+        # Already withdrawn or turned down: nothing left to remove
+        if offer.status in ("SUBMITTED", "ACCEPTED"):
+            return staff_withdraw_offer(offer)
     elif report.target_type == "REQUEST":
         job_request = JobRequest.objects.select_for_update().get(pk=report.request_id)
-        if job_request.status == "ACCEPTED":
-            return "This request has a booking. Settle it from the Bookings page."
-        if job_request.status in ("DRAFT", "OPEN"):
-            job_request.status = "CLOSED"
-            job_request.closed_at = now
-            job_request.close_reason = f"{REMOVED} {note}"
-            job_request.save()
-            for offer in job_request.offers.filter(status="SUBMITTED").select_related("provider"):
-                offer.status = "REJECTED"
-                offer.rejection_note = "The request was removed."
-                offer.save(update_fields=["status", "rejection_note", "updated_at"])
-                Notification.objects.create(
-                    recipient=offer.provider, notification_type="BOOKING",
-                    message=f"\"{job_request.title}\" was removed, so your offer is closed.",
-                )
+        if job_request.status != "CLOSED":
+            return staff_close_request(job_request, note)
     elif report.target_type == "USER":
         return "To stop an account, deactivate it on the Users page."
     elif report.target_type == "BOOKING":
