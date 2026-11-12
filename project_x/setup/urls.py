@@ -16,6 +16,7 @@ from services.views.admin_services import AdminServiceViewSet
 from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
 from services.views.admin_overview import admin_overview
 from services.views.admin_analytics import admin_analytics
+from services.views.admin_notifications import admin_notifications
 from services.views.admin_bookings import AdminBookingViewSet
 from services.views.admin_marketplace import AdminOfferViewSet, AdminRequestViewSet
 from services.views.marketplace import JobRequestViewSet, OfferViewSet
@@ -68,6 +69,7 @@ urlpatterns = [
     path('api/wallet', wallet, name='wallet'),
     path('api/admin/overview', admin_overview, name='admin-overview'),
     path('api/admin/analytics', admin_analytics, name='admin-analytics'),
+    path('api/admin/notifications', admin_notifications, name='admin-notifications'),
     path('api/book/<int:pk>/pay', pay_booking, name='pay-booking'),
     path('api/book/<int:pk>/verify-payment', verify_booking_payment, name='verify-booking-payment'),
     path('api/book/<int:pk>/confirm', confirm_booking, name='confirm-booking'),
