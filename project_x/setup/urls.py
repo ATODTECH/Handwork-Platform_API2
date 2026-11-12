@@ -13,6 +13,7 @@ from main.views.admin_artisans import AdminArtisanViewSet
 from main.views.admin_users import AdminUserViewSet
 from main.views.admin_staff import AdminStaffViewSet, MyStaffProfileViewSet
 from support.views import AdminSupportViewSet, TicketViewSet
+from referrals.views import my_referrals
 from main.views.reports import AdminReportViewSet, ReportViewSet
 from services.views.admin_services import AdminServiceViewSet
 from services.views.payouts import AdminWithdrawalViewSet, WithdrawalViewSet, wallet
@@ -73,6 +74,7 @@ urlpatterns = [
     path('api/bookings', get_today_bookings, name="today-bookings"),
     path('api/wallet', wallet, name='wallet'),
     path('api/admin/overview', admin_overview, name='admin-overview'),
+    path('api/referrals/me', my_referrals, name='my-referrals'),
     path('api/admin/me', MyStaffProfileViewSet.as_view({'get': 'list', 'patch': 'partial_update'}), name='admin-me'),
     path('api/admin/me/password', MyStaffProfileViewSet.as_view({'post': 'password'}), name='admin-me-password'),
     path('api/admin/analytics', admin_analytics, name='admin-analytics'),

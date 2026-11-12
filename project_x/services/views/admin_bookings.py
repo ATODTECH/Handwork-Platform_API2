@@ -98,6 +98,9 @@ class AdminBookingViewSet(viewsets.ReadOnlyModelViewSet):
             else:
                 booking.status = "Refunded"
                 booking.save()
+                # A referral discount spent on it can be used again
+                from referrals.rewards import return_customer_discount
+                return_customer_discount(booking)
                 Notification.objects.create(
                     recipient=booking.client,
                     message=f"We've refunded ₦{booking.agreed_amount:,} for the problem you reported. "

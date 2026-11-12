@@ -405,10 +405,15 @@ def artisan_share(gross):
 
 
 def credit_artisan(booking):
-    """Adds the artisan's share of a fully paid job to their wallet and records the earning"""
+    """
+    Adds the artisan's share of a fully paid job to their wallet and records the earning. A referral reward
+    can lower our fee for the artisan; a customer's referral discount comes out of our fee, never the artisan's.
+    """
+    from referrals.rewards import artisan_fee_cut
     gross = to_decimal(booking.agreed_amount or booking.budget)
-    net_amount = artisan_share(gross)
-    platform_fee = gross - net_amount
+    fee_rate = PLATFORM_FEE - artisan_fee_cut(booking) / 100
+    net_amount = (gross - gross * fee_rate).quantize(Decimal('0.01'))
+    platform_fee = gross - net_amount - to_decimal(booking.referral_discount)
     vat = Decimal('0.00')
 
     artisan = User.objects.select_for_update().get(pk=booking.artisan_id)
@@ -429,9 +434,12 @@ def credit_artisan(booking):
 
 def release_booking(booking, *, automatic=False, client_message=None):
     """Pays the artisan for a job the customer confirmed (or didn't dispute in time). Call inside a transaction."""
+    from referrals.rewards import reward_referrers
     net_amount = credit_artisan(booking)
     booking.status = "Released"
     booking.save()
+    # A first paid-out job earns whoever referred the customer or the artisan a reward
+    reward_referrers(booking)
     Notification.objects.create(
         recipient=booking.artisan,
         message=f"₦{net_amount:,} for your job with {booking.client.first_name} has been added to your earnings.",
@@ -464,7 +472,7 @@ def record_payment(reference, amount_kobo):
 
         # What each payment pays for: the status it must find the booking in, and the amount due
         due = {
-            "full": ("Accepted", booking.agreed_amount),
+            "full": ("Accepted", booking.agreed_amount - booking.referral_discount if booking.agreed_amount else None),
             "deposit": ("Accepted", booking.deposit_amount),
             "balance": ("Completed", booking.balance_amount if booking.deposit_paid_at else None),
         }.get(payment_type)
@@ -477,6 +485,8 @@ def record_payment(reference, amount_kobo):
 
         now = timezone.now()
         if payment_type == "full":
+            from referrals.rewards import use_customer_discount
+            use_customer_discount(booking)
             booking.status = "Paid"
             booking.fully_paid_at = now
             booking.payment_reference = reference
@@ -489,7 +499,9 @@ def record_payment(reference, amount_kobo):
             artisan_message = f"Client has paid ₦{booking.deposit_amount:,} deposit. You can now start the job!"
             client_message = "Deposit payment successful! The artisan will begin work soon."
         else:
+            from referrals.rewards import reward_referrers
             credit_artisan(booking)
+            reward_referrers(booking)
             booking.status = "Paid in Full"
             booking.fully_paid_at = now
             artisan_message = f"Final payment of ₦{booking.balance_amount:,} received. Funds released!"
@@ -513,8 +525,13 @@ def pay_booking(request, pk):
         return Response({"detail": "This booking isn't waiting for payment."}, status=status.HTTP_400_BAD_REQUEST)
     if not booking.agreed_amount or booking.agreed_amount <= 0:
         return Response({"detail": "Agreed amount not set."}, status=status.HTTP_400_BAD_REQUEST)
+    from referrals.rewards import reserve_customer_discount
+    with transaction.atomic():
+        locked = BookArtisan.objects.select_for_update(of=("self",)).get(pk=booking.pk)
+        # A referral reward takes 5% off; it's held for this booking until the payment goes through
+        discount = reserve_customer_discount(locked)
     try:
-        return start_paystack_payment(booking, request.user, "full", booking.agreed_amount)
+        return start_paystack_payment(booking, request.user, "full", booking.agreed_amount - discount)
     except Exception:
         logger.exception(f"Starting payment for booking {booking.id} failed")
         return Response({"detail": "We couldn't reach Paystack. Please try again."}, status=status.HTTP_502_BAD_GATEWAY)
@@ -585,6 +602,9 @@ def cancel_booking(request, pk):
         booking.cancelled_at = timezone.now()
         booking.cancellation_reason = reason
         booking.save()
+        # A referral discount held for it goes back for their next booking
+        from referrals.rewards import return_customer_discount
+        return_customer_discount(booking)
         # A booking made from an accepted offer: its request takes offers again
         from services.views.marketplace import reopen_request_after_cancel
         reopen_request_after_cancel(booking)

@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'chat',
     'contact',
     'support',
+    'referrals',
 ]
 
 MIDDLEWARE = [
