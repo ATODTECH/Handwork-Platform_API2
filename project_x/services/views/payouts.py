@@ -19,7 +19,7 @@ from rest_framework.permissions import IsAdminUser
 
 from main.models import BankDetails, Notification, User
 from main.paystack import PaystackError, bank_code_for, create_recipient, resolve_account, send_transfer
-from main.permissions import IsArtisanPermission
+from main.permissions import IsArtisanPermission, IsStaffAdmin
 from services.models.job_models import BookArtisan, Transaction, Withdrawal
 from services.serializers.payout_serializers import (
     AdminWithdrawalSerializer, RejectWithdrawalSerializer, RequestWithdrawalSerializer, WithdrawalSerializer,
@@ -214,6 +214,12 @@ class AdminWithdrawalViewSet(viewsets.ReadOnlyModelViewSet):
     """Staff review of withdrawals: list by status, approve (sends the transfer) or reject (refunds)"""
     permission_classes = [IsAdminUser]
     serializer_class = AdminWithdrawalSerializer
+
+    def get_permissions(self):
+        # Sending money is an admin decision; Support staff can see withdrawals but not approve or reject them
+        if self.action in ("approve", "reject"):
+            return [IsStaffAdmin()]
+        return super().get_permissions()
 
     def get_queryset(self):
         queryset = Withdrawal.objects.select_related("artisan", "reviewed_by")

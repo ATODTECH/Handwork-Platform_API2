@@ -57,6 +57,8 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=7),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=2),
     'TOKEN_OBTAIN_SERIALIZER': 'main.serializers.auth_serializer.MyTokenObtainPairSerializer',
+    # Record each sign-in, so staff pages can show when someone last signed in
+    'UPDATE_LAST_LOGIN': True,
 }
 
 # REST Framework Configuration
@@ -231,6 +233,8 @@ RESEND_API_KEY = env('RESEND_API_KEY', default=env('EMAIL_HOST_PASSWORD', defaul
 # Send from a background thread so requests don't wait on Resend (off in tests)
 EMAIL_IN_BACKGROUND = env.bool('EMAIL_IN_BACKGROUND', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='support@handworkexpert.com')
+# Sent to new staff in their welcome email
+ADMIN_LOGIN_URL = env('ADMIN_LOGIN_URL', default='https://handworkexpert.vercel.app/admin/login')
 
 
 CACHES = {

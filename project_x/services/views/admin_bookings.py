@@ -15,6 +15,7 @@ from rest_framework.permissions import IsAdminUser
 from chat.models import Message
 from chat.serializers import MessageSerializer
 from main.models import Notification
+from main.permissions import IsStaffAdmin
 from main.paystack import PaystackError, refund_charge
 from services.models.job_models import BookArtisan
 from services.serializers.job_serializers import AdminBookingSerializer, ResolveDisputeSerializer
@@ -36,6 +37,12 @@ class AdminBookingViewSet(viewsets.ReadOnlyModelViewSet):
     """Every booking by stage, and `resolve` for reported problems"""
     permission_classes = [IsAdminUser]
     serializer_class = AdminBookingSerializer
+
+    def get_permissions(self):
+        # Refunding or paying out a reported problem is an admin decision
+        if self.action == "resolve":
+            return [IsStaffAdmin()]
+        return super().get_permissions()
 
     def get_queryset(self):
         queryset = (BookArtisan.objects.select_related("client", "artisan", "resolved_by")
