@@ -49,6 +49,8 @@ class BookArtisan(models.Model):
         help_text="Remaining amount after deposit"
     )
     fully_paid_at = models.DateTimeField(null=True, blank=True)
+    # A referral reward's 5% off, taken off what the customer pays; we absorb it and the artisan is paid in full
+    referral_discount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     # When the artisan marked the job done; it's released automatically a while after this
     completed_at = models.DateTimeField(null=True, blank=True)
     # When the artisan's earnings were added to their wallet

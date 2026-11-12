@@ -14,6 +14,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
 
 from main.models import Rating, Report, User
+from referrals.models import Referral, ReferralReward
 from services.models.job_models import BookArtisan, Transaction
 from services.models.marketplace_models import JobRequest, Offer
 from services.models.services_models import Category
@@ -84,6 +85,11 @@ def totals(start, end):
         "reviews": reviews.count(),
         "average_rating": round(reviews.aggregate(value=Avg("star"))["value"] or 0, 1) or None,
         "reports": between(Report.objects.all(), "created_at", start, end).count(),
+        # Sign-ups through someone's invite, those whose first job was paid out, and rewards used
+        "referral_signups": between(Referral.objects.all(), "created_at", start, end).count(),
+        "referrals_qualified": between(Referral.objects.filter(status="QUALIFIED"), "qualified_at", start, end).count(),
+        "referral_rewards_used": between(ReferralReward.objects.filter(status="USED"), "used_at", start, end).count(),
+        "referral_discounts": between(BookArtisan.objects.filter(referral_discount__gt=0, status__in=("Paid", "In Progress", "Completed", "Released", "Disputed")), "fully_paid_at", start, end).aggregate(value=Sum("referral_discount"))["value"] or ZERO,
     }
 
 

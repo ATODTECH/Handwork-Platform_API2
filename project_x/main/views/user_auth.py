@@ -41,7 +41,10 @@ class SignUpUserView(viewsets.ModelViewSet):
         return [IsSelfOrStaff()]
 
     def perform_create(self, serializer):
-        serializer.save(role="USER")
+        user = serializer.save(role="USER")
+        # Signed up through a friend's invite link or code
+        from referrals.rewards import link_referral
+        link_referral(user, self.request.data.get("referral_code"))
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -244,7 +247,9 @@ class SignUpArtisanViewSet(viewsets.ModelViewSet):
         return PublicArtisanSerializer if self.action == "list" else ArtisanSerializer
 
     def perform_create(self, serializer):
-        serializer.save(role="ARTISAN")
+        user = serializer.save(role="ARTISAN")
+        from referrals.rewards import link_referral
+        link_referral(user, self.request.data.get("referral_code"))
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()

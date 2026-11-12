@@ -2,6 +2,7 @@ from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
+from rest_framework.test import APITestCase
 
 from services.catalog import CATALOG
 from services.models.services_models import Category, Services
@@ -46,3 +47,12 @@ class SeedCatalogTests(TestCase):
         response = self.client.get("/api/get_services")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["data"]), SERVICE_COUNT)
+
+
+class SignedOutBookingEndpointTests(APITestCase):
+    """These read request.user, so with no sign-in they answered 500; now they ask to sign in"""
+
+    def test_they_need_a_sign_in(self):
+        self.assertEqual(self.client.get("/api/my_bookings").status_code, 401)
+        self.assertEqual(self.client.post("/api/toggle_availability", {"isAvailable": True}, format="json").status_code, 401)
+        self.assertEqual(self.client.get("/api/bookings").status_code, 401)

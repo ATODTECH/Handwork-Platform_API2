@@ -21,11 +21,11 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         fields = ('id', 'artisan', 'client', 'services', 'description', 'budget', 'agreed_amount', 'created_at',
             'updated_at', 'address', 'scheduled_date', 'scheduled_time', 'status', 'completed_at',
             'fully_paid_at', 'deposit_amount', 'deposit_paid_at', 'released_at', 'cancelled_at', 'cancellation_reason',
-            'disputed_at', 'dispute_reason', 'resolved_at', 'resolution_note',
+            'disputed_at', 'dispute_reason', 'resolved_at', 'resolution_note', 'referral_discount',
         )
         # The customer is whoever is signed in, never taken from the request body; the rest move with the status
         read_only_fields = ('client', 'completed_at', 'fully_paid_at', 'deposit_amount', 'deposit_paid_at', 'released_at', 'cancelled_at', 'cancellation_reason',
-                            'disputed_at', 'dispute_reason', 'resolved_at', 'resolution_note')
+                            'disputed_at', 'dispute_reason', 'resolved_at', 'resolution_note', 'referral_discount')
 
     def validate_scheduled_date(self, scheduled_date):
         if self.instance is None and scheduled_date < timezone.localdate():
@@ -63,7 +63,20 @@ class ArtisanBookingSerializers(serializers.ModelSerializer):
         # The customer's review of this job, once they've left one
         review = getattr(instance, 'review', None)
         representation['review'] = ({"id": review.id, "star": review.star} if review and review.hidden_at is None else None)
+        representation['amount_due'] = self.get_amount_due(instance)
         return representation
+
+    def get_amount_due(self, booking):
+        """What the customer pays: the price less a referral discount (one held for it, or the next one they'd use)"""
+        if not booking.agreed_amount:
+            return None
+        from referrals.rewards import customer_discount_preview
+        request = self.context.get('request')
+        if booking.status == "Accepted" and request is not None and request.user.pk == booking.client_id:
+            discount = customer_discount_preview(booking)
+        else:
+            discount = booking.referral_discount
+        return str(booking.agreed_amount - discount)
 
     def get_contact(self, booking):
         """The other side's phone number, once the job is paid for and they need to arrange it"""

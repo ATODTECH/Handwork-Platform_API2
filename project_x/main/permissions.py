@@ -42,3 +42,31 @@ class IsStaffOrReadOnly(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
         return bool(request.user and request.user.is_staff)
+
+
+# Staff roles. Admins can do everything; Support staff can't make money decisions (approve payouts, refund or
+# pay out a reported problem) or manage staff. Admin is Django's is_superuser, so no extra field is needed.
+STAFF_ADMIN, STAFF_SUPPORT = "ADMIN", "SUPPORT"
+
+
+def has_superuser():
+    from main.models import User
+    return User.objects.filter(is_staff=True, is_superuser=True, is_active=True).exists()
+
+
+def staff_role(user):
+    """ADMIN or SUPPORT. Until any active staff account is an admin, every staff member counts as one, so
+    nobody is locked out of payouts when roles are first introduced."""
+    if not (user and user.is_authenticated and user.is_staff):
+        return None
+    if user.is_superuser or not has_superuser():
+        return STAFF_ADMIN
+    return STAFF_SUPPORT
+
+
+class IsStaffAdmin(permissions.BasePermission):
+    """Staff with the Admin role"""
+    message = "Only admins can do this. Ask an admin on your team."
+
+    def has_permission(self, request, view):
+        return staff_role(request.user) == STAFF_ADMIN

@@ -14,5 +14,7 @@ ENV PYTHONPATH="/app"
 
 # Run Gunicorn with the correct import path
 # CMD ["gunicorn", "-b", "0.0.0.0:8000", "setup.wsgi"]
+# Apply migrations before starting, so every deploy has the database it expects. If a migration fails the
+# container doesn't start, the health check fails and Railway keeps the previous deploy running.
 # Railway injects PORT; fall back to 8000 locally
-CMD ["sh", "-c", "daphne -b 0.0.0.0 -p ${PORT:-8000} --proxy-headers setup.asgi:application"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py createcachetable && exec daphne -b 0.0.0.0 -p ${PORT:-8000} --proxy-headers setup.asgi:application"]
