@@ -13,6 +13,7 @@ from rest_framework.permissions import IsAdminUser
 
 from main.models import Report, User
 from services.models.job_models import BookArtisan, Withdrawal
+from support.models import SupportTicket
 
 DEFAULT_DAYS = 30
 MAX_DAYS = 90
@@ -88,6 +89,17 @@ def report_items(since):
                    "reported-content", report.pk)
 
 
+def support_items(since):
+    """Tickets waiting on staff (always), and ones that came in during the window"""
+    tickets = SupportTicket.objects.select_related("requester").filter(Q(status="OPEN") | Q(created_at__gte=since))
+    for ticket in tickets:
+        waiting = ticket.status == "OPEN"
+        yield item("SUPPORT", ticket.pk, ticket.last_message_at if waiting else ticket.created_at,
+                   f"{ticket.contact_name}: {ticket.subject}",
+                   f"{ticket.reference} · {ticket.get_category_display()}" + (" · new message" if ticket.staff_unread else ""),
+                   waiting, "support", ticket.pk)
+
+
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def admin_notifications(request):
@@ -98,7 +110,8 @@ def admin_notifications(request):
     days = max(1, min(MAX_DAYS, days))
     since = timezone.now() - timedelta(days=days)
 
-    items = [*artisan_items(since), *booking_items(since), *withdrawal_items(since), *report_items(since)]
+    items = [*artisan_items(since), *booking_items(since), *withdrawal_items(since), *report_items(since),
+             *support_items(since)]
     # Waiting on staff first, then newest
     items.sort(key=lambda entry: entry["at"], reverse=True)
     items.sort(key=lambda entry: not entry["needs_action"])

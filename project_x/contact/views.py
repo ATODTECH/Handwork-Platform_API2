@@ -35,7 +35,10 @@ class ContactUsView(APIView):
       serializer = ContactSerializer(data=req.data, partial=True)
       if not serializer.is_valid():
         return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
-      serializer.save()
+      contact = serializer.save()
+      # Staff answer it from the admin console's Support inbox
+      from support.views import ticket_from_contact
+      ticket_from_contact(contact)
       return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
     return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
   

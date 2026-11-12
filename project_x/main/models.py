@@ -221,6 +221,7 @@ class Notification(models.Model):
         ('AVAILABILITY', 'Availability'),
         ('PROFILE_UPDATE', 'Profile Update'),
         ('VERIFICATION', 'Verification'),
+        ('SUPPORT', 'Support'),
     )
     
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
