@@ -170,6 +170,7 @@ class BookArtisanViewSet(viewsets.ModelViewSet):
 # GET ALL MY BOOKINGS (client + artisan)
 # ─────────────────────────────────────────────
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_my_bookings(request):
     user = request.user
     bookings = BookArtisan.objects.filter(Q(client=user) | Q(artisan=user))
@@ -259,6 +260,7 @@ class MyFilteredBookings(viewsets.ModelViewSet):
 # TOGGLE AVAILABILITY
 # ─────────────────────────────────────────────
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def toggle_availability(request):
     user = request.user
     availability = request.data.get("isAvailable")
@@ -291,6 +293,7 @@ def toggle_availability(request):
 # GET TODAY'S BOOKINGS
 # ─────────────────────────────────────────────
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_today_bookings(request):
     user = request.user
     date_today = datetime.today().date()
