@@ -86,9 +86,10 @@ def greeting(user):
     return f"Hi {name}," if name else "Hi,"
 
 
-def send_email(to, subject, text, html=None):
-    """Send one email without waiting for it; failures are logged, never raised"""
-    message = EmailMultiAlternatives(subject=subject, body=text, from_email=settings.DEFAULT_FROM_EMAIL, to=[to])
+def send_email(to, subject, text, html=None, reply_to=None):
+    """Send one email without waiting for it; failures are logged, never raised. `reply_to`: where a reply goes."""
+    message = EmailMultiAlternatives(subject=subject, body=text, from_email=settings.DEFAULT_FROM_EMAIL, to=[to],
+                                     reply_to=[reply_to] if reply_to else None)
     if html:
         message.attach_alternative(html, "text/html")
     if settings.EMAIL_IN_BACKGROUND:
