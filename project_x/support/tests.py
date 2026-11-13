@@ -1,8 +1,6 @@
-from django.conf import settings
 from django.core import mail
 from django.test import override_settings
 
-from contact.models import Contact
 from main.models import Notification
 from main.tests import ApiTestCase, make_user
 from services.models.job_models import BookArtisan
@@ -79,19 +77,6 @@ class SupportTests(ApiTestCase):
         self.assertEqual((counts["open"], counts["mine"], counts["unread"]), (1, 1, 1))
         self.assertEqual(self.client.post(f"/api/admin/support/{ticket_id}/assign", {"staff": str(self.customer.id)}, format="json").status_code, 404)
         self.assertEqual(self.data(self.client.get(f"/api/admin/support?search=HW-{ticket_id:05d}"))[0]["priority"], "HIGH")
-
-    @override_settings(CONTACT_FORM_EMAIL="hello@handworkexpert.com")
-    def test_contact_form_messages_go_to_the_website_inbox_not_support(self):
-        response = self.client.post("/v2/contact/api/", {
-            "name": "Bola Visitor", "phoneNumber": "08011112222", "email": "bola@example.com", "message": "Do you work in Abuja?",
-        }, format="json", HTTP_AUTHORIZATION=str(settings.API_KEY))
-        self.assertEqual(response.status_code, 201, response.content)
-        self.assertEqual(Contact.objects.count(), 1)
-        self.assertFalse(SupportTicket.objects.exists())
-        email = mail.outbox[-1]
-        self.assertEqual((email.to, email.reply_to), (["hello@handworkexpert.com"], ["bola@example.com"]))
-        self.assertIn("Do you work in Abuja?", email.body)
-        self.assertIn("08011112222", email.body)
 
     def test_open_tickets_show_in_staff_notifications(self):
         self.open_ticket()

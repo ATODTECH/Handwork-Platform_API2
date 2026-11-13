@@ -75,6 +75,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '1000/day',
         'user': '2000/day',
+        # The website's public contact and newsletter forms, per visitor
+        'contact': '10/hour',
     },
 }
 

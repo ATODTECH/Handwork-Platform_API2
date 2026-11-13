@@ -1,5 +1,7 @@
 from django.conf import settings
 
+from rest_framework.permissions import AllowAny
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -39,29 +41,36 @@ class Token(APIView):
     return Response({'data':"error"}, status=status.HTTP_403_FORBIDDEN)
 
 
-class ContactUsView(APIView):
+class PublicFormView(APIView):
+  """
+  The website's public forms. Anyone may send them, so they're limited per visitor (the `contact` throttle
+  rate) instead of the old shared key, which the browser had to carry and so couldn't be kept secret.
+  """
+  authentication_classes = []
+  permission_classes = [AllowAny]
+  throttle_classes = [ScopedRateThrottle]
+  throttle_scope = "contact"
+
+
+class ContactUsView(PublicFormView):
   """post route `v2/contact/api/`"""
   def post(self, req):
-    """Stores general contact user's info"""
-    if (req.headers.get('Authorization') == secret):
-      serializer = ContactSerializer(data=req.data, partial=True)
-      if not serializer.is_valid():
-        return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
-      contact = serializer.save()
-      # Emailed to the website's inbox; replying answers the visitor directly
-      send_contact_email(contact)
-      return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
-    return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
-  
+    """Stores the message and emails it to the website's inbox"""
+    serializer = ContactSerializer(data=req.data)
+    if not serializer.is_valid():
+      return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    contact = serializer.save()
+    # Emailed to the website's inbox; replying answers the visitor directly
+    send_contact_email(contact)
+    return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
 
-class SubscribeView(APIView):
+
+class SubscribeView(PublicFormView):
   """post route `v2/contact/subscribe/api/`"""
   def post(self, req):
-    """Stores general subscribing user's mail"""
-    if (req.headers.get('Authorization') == secret):
-      serializer = SubscribeSerializer(data=req.data)
-      if not serializer.is_valid():
-        return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
-      serializer.save()
-      return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
-    return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
+    """Stores a newsletter sign-up"""
+    serializer = SubscribeSerializer(data=req.data)
+    if not serializer.is_valid():
+      return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    serializer.save()
+    return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
