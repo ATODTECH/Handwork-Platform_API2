@@ -52,18 +52,6 @@ def add_message(ticket, author, text, from_staff):
     ticket.user_unread = from_staff
 
 
-def ticket_from_contact(contact):
-    """A website contact-form message becomes a ticket in the inbox"""
-    ticket = SupportTicket.objects.create(
-        requester=User.objects.filter(email__iexact=contact.email).first(),
-        name=contact.name, email=contact.email, phone=contact.phoneNumber, source="CONTACT_FORM",
-        subject=f"Website message from {contact.name}"[:150], category="OTHER",
-    )
-    add_message(ticket, ticket.requester, contact.message, from_staff=False)
-    ticket.save()
-    return ticket
-
-
 class TicketViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """GET/POST /api/support/tickets, GET …/{id}, POST …/{id}/messages, POST …/{id}/resolve"""
     permission_classes = [IsAuthenticated]

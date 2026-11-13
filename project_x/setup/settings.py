@@ -237,6 +237,8 @@ EMAIL_IN_BACKGROUND = env.bool('EMAIL_IN_BACKGROUND', default=True)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='support@handworkexpert.com')
 # Sent to new staff in their welcome email
 ADMIN_LOGIN_URL = env('ADMIN_LOGIN_URL', default='https://handworkexpert.vercel.app/admin/login')
+# The website's inbox: contact-form messages are emailed here, with Reply-To set to the visitor
+CONTACT_FORM_EMAIL = env('CONTACT_FORM_EMAIL', default=DEFAULT_FROM_EMAIL)
 
 
 CACHES = {

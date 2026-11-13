@@ -4,11 +4,23 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+from main.emails import send_email
+
 from .sessions import createSession, verifySession
 from .serializers import ContactSerializer, SubscribeSerializer
 
 
 secret = str(settings.API_KEY)
+
+
+def send_contact_email(contact):
+  send_email(
+    settings.CONTACT_FORM_EMAIL,
+    f"Website message from {contact.name}",
+    f"Name: {contact.name}\nEmail: {contact.email}\nPhone: {contact.phoneNumber}\n\n{contact.message}\n\n"
+    "Sent from the contact form on the Handwork Expert website. Reply to this email to answer them.",
+    reply_to=contact.email,
+  )
 
 class Token(APIView):
   """get route `onload/token/api`"""
@@ -36,9 +48,8 @@ class ContactUsView(APIView):
       if not serializer.is_valid():
         return Response({'data': "error", 'status': serializer.errors}, status=status.HTTP_406_NOT_ACCEPTABLE)
       contact = serializer.save()
-      # Staff answer it from the admin console's Support inbox
-      from support.views import ticket_from_contact
-      ticket_from_contact(contact)
+      # Emailed to the website's inbox; replying answers the visitor directly
+      send_contact_email(contact)
       return Response({'data': "success", 'status': "201"}, status=status.HTTP_201_CREATED)
     return Response({'data': "error", 'status': "401"}, status=status.HTTP_401_UNAUTHORIZED)
   
